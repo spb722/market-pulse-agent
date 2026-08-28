@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Market Pulse — Competitive Analysis Report</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page-plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --success-text: #006300;
+
+    --series-1: #2a78d6; /* Ooredoo */
+    --series-2: #eb6834; /* Vodafone */
+    --series-3: #1baf7a; /* reserved, 3rd competitor */
+    --series-4: #eda100; /* reserved, 4th competitor */
+
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-serious: #ec835a;
+    --status-critical: #d03b3b;
+
+    --card-radius: 10px;
+    --shadow: 0 1px 2px rgba(11,11,11,0.06), 0 1px 1px rgba(11,11,11,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page-plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --gridline: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --success-text: #0ca30c;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page-plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --success-text: #0ca30c;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  body { padding: 24px 24px 64px; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+
+  h1, h2, h3 { font-weight: 600; margin: 0; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin-bottom: 4px; }
+  .section-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 16px; }
+  a { color: var(--series-1); }
+
+  /* ---------- header ---------- */
+  header.page-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .header-meta { color: var(--text-secondary); font-size: 12.5px; margin-top: 4px; }
+  .header-meta code {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 5px; font-size: 11.5px;
+  }
+  #theme-toggle {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  #theme-toggle:hover { background: var(--page-plane); }
+
+  /* ---------- filter row ---------- */
+  .filter-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius);
+    padding: 10px 14px; margin-bottom: 22px; box-shadow: var(--shadow);
+  }
+  .filter-row label { font-size: 12px; color: var(--text-secondary); margin-right: 4px; }
+  .filter-group { display: flex; align-items: center; gap: 6px; }
+  select, input[type="search"] {
+    font-family: inherit; font-size: 13px; color: var(--text-primary);
+    background: var(--page-plane); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px;
+  }
+  input[type="search"] { min-width: 200px; }
+  .filter-spacer { flex: 1; }
+  .btn {
+    font-family: inherit; font-size: 13px; border: 1px solid var(--border);
+    background: var(--page-plane); color: var(--text-primary); border-radius: 6px;
+    padding: 6px 12px; cursor: pointer;
+  }
+  .btn:hover { background: var(--gridline); }
+  .btn.primary { background: var(--series-1); color: #fff; border-color: var(--series-1); }
+  .btn.primary:hover { opacity: 0.9; }
+  #result-count { font-size: 12px; color: var(--text-muted); }
+
+  /* ---------- sections & cards ---------- */
+  section { margin-bottom: 34px; }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--card-radius);
+    box-shadow: var(--shadow); padding: 18px 20px;
+  }
+  .grid { display: grid; gap: 14px; }
+  .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+  @media (max-width: 900px) {
+    .grid.cols-2, .grid.cols-3, .grid.cols-5 { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ---------- stat tiles ---------- */
+  .stat-tile { padding: 14px 16px; }
+  .stat-label { font-size: 12px; color: var(--text-secondary); }
+  .stat-value { font-size: 26px; font-weight: 600; margin-top: 4px; font-variant-numeric: proportional-nums; }
+  .stat-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+  .stat-tile.status-good .stat-value { color: var(--status-good); }
+  .stat-tile.status-warning .stat-value { color: #a06400; }
+  .stat-tile.status-critical .stat-value { color: var(--status-critical); }
+  .stat-tile .tile-icon { font-size: 12px; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--surface-1);
+    border-radius: 0 var(--card-radius) var(--card-radius) 0; padding: 14px 18px;
+    font-size: 14px; line-height: 1.55; margin-bottom: 16px; border: 1px solid var(--border); border-left-width: 3px; border-left-color: var(--series-2);
+  }
+  .callout strong { font-weight: 600; }
+  .callout .callout-label {
+    display: inline-block; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 6px;
+  }
+
+  /* ---------- charts ---------- */
+  .chart-card figcaption { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .bar-rect { cursor: pointer; }
+  .bar-value-label { font-size: 11px; fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  .axis-label { font-size: 11px; fill: var(--text-muted); font-family: system-ui, sans-serif; }
+  .chart-tooltip {
+    position: fixed; pointer-events: none; z-index: 50;
+    background: var(--text-primary); color: var(--surface-1);
+    font-size: 12px; padding: 6px 9px; border-radius: 6px; line-height: 1.4;
+    box-shadow: var(--shadow); opacity: 0; transition: opacity 0.08s ease; max-width: 240px;
+  }
+  .chart-tooltip .tt-value { font-weight: 700; }
+  .table-view-toggle { font-size: 11.5px; color: var(--series-1); background: none; border: none; cursor: pointer; padding: 0; font-family: inherit; }
+  .sr-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; display: none; }
+  .sr-table.shown { display: table; }
+  .sr-table th, .sr-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--gridline); }
+
+  /* ---------- badges ---------- */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.good { background: color-mix(in srgb, var(--status-good) 16%, transparent); color: var(--status-good); }
+  .badge.warning { background: color-mix(in srgb, var(--status-warning) 22%, transparent); color: #a06400; }
+  .badge.serious { background: color-mix(in srgb, var(--status-serious) 20%, transparent); color: #b1522f; }
+  .badge.critical { background: color-mix(in srgb, var(--status-critical) 16%, transparent); color: var(--status-critical); }
+  .badge.neutral { background: var(--gridline); color: var(--text-secondary); }
+  :root[data-theme="dark"] .badge.warning, :root:where(:not([data-theme="light"])) .badge.warning { color: var(--status-warning); }
+  @media (prefers-color-scheme: dark) { .badge.warning { color: var(--status-warning); } }
+  :root[data-theme="dark"] .badge.serious, :root:where(:not([data-theme="light"])) .badge.serious { color: var(--status-serious); }
+  @media (prefers-color-scheme: dark) { .badge.serious { color: var(--status-serious); } }
+
+  /* ---------- data table ---------- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--card-radius); background: var(--surface-1); }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 920px; }
+  table.data-table th {
+    position: sticky; top: 0; background: var(--surface-1); text-align: left; font-weight: 600;
+    padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--text-secondary);
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  table.data-table th:hover { color: var(--text-primary); }
+  table.data-table th.sorted::after { content: attr(data-arrow); margin-left: 4px; color: var(--text-muted); }
+  table.data-table td { padding: 8px 10px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+  table.data-table tbody tr:hover { background: var(--page-plane); }
+  table.data-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  .plan-row { cursor: pointer; }
+  .detail-row td { background: var(--page-plane); padding: 14px 18px; }
+  .detail-row { display: none; }
+  .detail-row.shown { display: table-row; }
+  .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; font-size: 12.5px; }
+  .detail-grid h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin: 0 0 4px; }
+  .detail-grid p { margin: 0; line-height: 1.5; color: var(--text-secondary); }
+  .metric-mini-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .metric-mini-table td { padding: 3px 6px; border-bottom: 1px solid var(--gridline); }
+  .empty-state { padding: 30px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page-header">
+    <div>
+      <h1>Market Pulse — Competitive Analysis Report</h1>
+      <div class="header-meta" id="header-meta"></div>
+    </div>
+    <button id="theme-toggle" type="button">🌓 Toggle theme</button>
+  </header>
+
+  <div class="filter-row">
+    <div class="filter-group">
+      <label for="f-competitor">Competitor</label>
+      <select id="f-competitor"><option value="">All</option></select>
+    </div>
+    <div class="filter-group">
+      <label for="f-category">Category</label>
+      <select id="f-category">
+        <option value="">All</option>
+        <option value="prepaid">Prepaid</option>
+        <option value="postpaid">Postpaid</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="f-risk">Risk level</label>
+      <select id="f-risk">
+        <option value="">All</option>
+        <option value="HIGH">High</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="LOW">Low</option>
+        <option value="NOT_SCORED">Not scored</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <input type="search" id="f-search" placeholder="Search plan name…" />
+    </div>
+    <div class="filter-spacer"></div>
+    <span id="result-count"></span>
+    <button class="btn" id="reset-filters" type="button">Reset</button>
+  </div>
+
+  <!-- ============ KPI OVERVIEW ============ -->
+  <section id="section-kpi">
+    <h2>Overview</h2>
+    <p class="section-sub">How much was analyzed and where it landed, for the current filter selection.</p>
+    <div class="grid cols-5" id="kpi-row"></div>
+  </section>
+
+  <!-- ============ COMPETITOR RISK COMPARISON ============ -->
+  <section id="section-comparison">
+    <h2>Which competitor is riskier to Omantel?</h2>
+    <p class="section-sub">Always compares every competitor in this report, regardless of the filters above.</p>
+    <div class="callout" id="comparison-callout"></div>
+    <div class="grid cols-2">
+      <figure class="card chart-card" id="chart-risk-score-card">
+        <h3>Average &amp; peak risk score per competitor</h3>
+        <div class="legend" id="legend-risk-score"></div>
+        <svg id="chart-risk-score" width="100%" height="220"></svg>
+        <figcaption>Risk score (0–100): how much realized business risk each competitor's plans carry, on average and at the worst single plan.</figcaption>
+        <button class="table-view-toggle" data-target="tv-risk-score">View as table</button>
+        <table class="sr-table" id="tv-risk-score"></table>
+      </figure>
+      <figure class="card chart-card" id="chart-risk-level-card">
+        <h3>Risk level mix per competitor</h3>
+        <div class="legend" id="legend-risk-level"></div>
+        <svg id="chart-risk-level" width="100%" height="220"></svg>
+        <figcaption>Count of matched plans falling into each risk tier. See the note below if everything reads Low.</figcaption>
+        <button class="table-view-toggle" data-target="tv-risk-level">View as table</button>
+        <table class="sr-table" id="tv-risk-level"></table>
+      </figure>
+    </div>
+    <p class="section-sub" id="calibration-note" style="margin-top:10px;"></p>
+  </section>
+
+  <!-- ============ PORTFOLIO BREAKDOWN ============ -->
+  <section id="section-breakdown">
+    <h2>Portfolio breakdown</h2>
+    <p class="section-sub">What was scraped, and how it splits by category and plan type — per competitor.</p>
+    <div class="grid cols-2">
+      <figure class="card chart-card" id="chart-category-card">
+        <h3>Prepaid vs. postpaid</h3>
+        <div class="legend" id="legend-category"></div>
+        <svg id="chart-category" width="100%" height="200"></svg>
+        <figcaption>Number of competitor plans scraped in each category.</figcaption>
+        <button class="table-view-toggle" data-target="tv-category">View as table</button>
+        <table class="sr-table" id="tv-category"></table>
+      </figure>
+      <figure class="card chart-card" id="chart-product-type-card">
+        <h3>Plan sub-categories</h3>
+        <div class="legend" id="legend-product-type"></div>
+        <svg id="chart-product-type" width="100%" height="200"></svg>
+        <figcaption>Product type as classified in Step 1/3 (COMBO, DATA, VOICE, IDD, ROAMING, SMS, OTHER).</figcaption>
+        <button class="table-view-toggle" data-target="tv-product-type">View as table</button>
+        <table class="sr-table" id="tv-product-type"></table>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ MATCHING OUTCOMES ============ -->
+  <section id="section-matching">
+    <h2>Matching outcomes</h2>
+    <p class="section-sub">For each competitor plan, did we find a genuinely comparable Omantel plan?</p>
+    <figure class="card chart-card" id="chart-match-card">
+      <div class="legend" id="legend-match"></div>
+      <svg id="chart-match" width="100%" height="200"></svg>
+      <figcaption><strong>Matched</strong> = a comparable Omantel plan was found and analyzed. <strong>No good match</strong> = candidates existed but none were comparable. <strong>No direct match</strong> = Omantel has nothing in that category at all — a potential portfolio gap.</figcaption>
+      <button class="table-view-toggle" data-target="tv-match">View as table</button>
+      <table class="sr-table" id="tv-match"></table>
+    </figure>
+  </section>
+
+  <!-- ============ PRIORITIZED ACTION TABLE ============ -->
+  <section id="section-table">
+    <h2>Plan-by-plan detail — prioritized for review</h2>
+    <p class="section-sub">Sorted by risk score by default. Click a row to expand the full gap breakdown and narrative. Click a column header to re-sort.</p>
+    <div style="margin-bottom:10px;">
+      <button class="btn primary" id="export-csv" type="button">Export current view to CSV</button>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table" id="main-table">
+        <thead>
+          <tr>
+            <th data-key="competitor">Competitor</th>
+            <th data-key="competitor_plan">Competitor plan</th>
+            <th data-key="omantel_plan">Omantel plan</th>
+            <th data-key="category">Category</th>
+            <th data-key="product_type">Type</th>
+            <th data-key="overall_position">Position</th>
+            <th data-key="primary_attention_area">Main issue</th>
+            <th data-key="risk_score" class="num">Risk score</th>
+            <th data-key="risk_level">Risk level</th>
+          </tr>
+        </thead>
+        <tbody id="main-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ NO-MATCH / PORTFOLIO GAPS ============ -->
+  <section id="section-no-match">
+    <h2>Portfolio gaps — competitor plans with no comparable Omantel plan</h2>
+    <p class="section-sub">Worth a look regardless of risk score: these are places the competitor has an offer and Omantel doesn't have anything close.</p>
+    <div class="table-scroll">
+      <table class="data-table" id="no-match-table">
+        <thead>
+          <tr>
+            <th data-key="competitor">Competitor</th>
+            <th data-key="competitor_plan">Competitor plan</th>
+            <th data-key="category">Category</th>
+            <th data-key="product_type">Type</th>
+            <th data-key="match_status">Status</th>
+            <th data-key="reason">Reason</th>
+          </tr>
+        </thead>
+        <tbody id="no-match-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<div class="chart-tooltip" id="chart-tooltip"></div>
+
+<script>
+const DATA = /*__MARKET_PULSE_DATA__*/null;
+
+// ---------------------------------------------------------------------------
+// Theme toggle
+// ---------------------------------------------------------------------------
+(function () {
+  const root = document.documentElement;
+  const btn = document.getElementById('theme-toggle');
+  const stored = localStorage.getItem('mp-theme');
+  if (stored) root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', () => {
+    const current = root.getAttribute('data-theme') ||
+      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('mp-theme', next); } catch (e) {}
+  });
+})();
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const COMPETITOR_COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)'];
+const STATUS_COLOR = { good: 'var(--status-good)', warning: 'var(--status-warning)', serious: 'var(--status-serious)', critical: 'var(--status-critical)', neutral: 'var(--baseline)' };
+const RISK_STATUS_KEY = { LOW: 'good', MEDIUM: 'warning', HIGH: 'critical', NOT_SCORED: 'neutral' };
+const POSITION_STATUS_KEY = { OMANTEL_ADVANTAGE: 'good', BALANCED: 'neutral', COMPETITOR_ADVANTAGE: 'critical' };
+const MATCH_STATUS_KEY = { MATCHED: 'good', NO_GOOD_MATCH: 'warning', NO_DIRECT_MATCH: 'serious' };
+
+function competitorColor(name) {
+  const idx = DATA.competitors.findIndex((c) => c.name === name);
+  return COMPETITOR_COLORS[idx >= 0 ? idx % COMPETITOR_COLORS.length : 0];
+}
+function fmtNum(n, digits) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits === undefined ? 2 : digits, minimumFractionDigits: 0 });
+}
+function pct(n, d) { return d ? Math.round((n / d) * 1000) / 10 : 0; }
+function badgeHtml(text, statusKey) {
+  const cls = statusKey || 'neutral';
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+function el(tag, props, children) {
+  const node = document.createElement(tag);
+  if (props) for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') node.className = v;
+    else if (k === 'html') node.innerHTML = v;
+    else node.setAttribute(k, v);
+  }
+  (children || []).forEach((c) => node.appendChild(c));
+  return node;
+}
+function text(t) { return document.createTextNode(t === null || t === undefined ? '' : String(t)); }
+
+// ---------------------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------------------
+const tooltipEl = document.getElementById('chart-tooltip');
+function showTooltip(evt, html) {
+  tooltipEl.innerHTML = html;
+  tooltipEl.style.opacity = '1';
+  positionTooltip(evt);
+}
+function positionTooltip(evt) {
+  const pad = 14;
+  let x = evt.clientX + pad;
+  let y = evt.clientY + pad;
+  const rect = tooltipEl.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth - 8) x = evt.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight - 8) y = evt.clientY - rect.height - pad;
+  tooltipEl.style.left = x + 'px';
+  tooltipEl.style.top = y + 'px';
+}
+function hideTooltip() { tooltipEl.style.opacity = '0'; }
+
+// ---------------------------------------------------------------------------
+// Minimal grouped bar chart (SVG), one entity-group per category on the x-axis
+// groups: [{ label, bars: [{ seriesLabel, value, color }] }]
+// ---------------------------------------------------------------------------
+function renderGroupedBarChart(svgId, groups, opts) {
+  opts = opts || {};
+  const svg = document.getElementById(svgId);
+  svg.innerHTML = '';
+  const width = svg.parentElement.clientWidth || 520;
+  const height = parseInt(svg.getAttribute('height'), 10) || 200;
+  const padLeft = 34, padRight = 12, padTop = 10, padBottom = 34;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const allValues = groups.flatMap((g) => g.bars.map((b) => b.value || 0));
+  const maxVal = Math.max(1, ...allValues);
+  const niceMax = opts.maxOverride || (maxVal <= 10 ? Math.ceil(maxVal) : Math.ceil(maxVal / Math.pow(10, String(Math.floor(maxVal)).length - 1)) * Math.pow(10, String(Math.floor(maxVal)).length - 1));
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (t) => document.createElementNS(ns, t);
+
+  // gridlines (0, mid, max)
+  [0, 0.5, 1].forEach((f) => {
+    const y = padTop + plotH * (1 - f);
+    const line = mk('line');
+    line.setAttribute('x1', padLeft); line.setAttribute('x2', width - padRight);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'var(--gridline)'); line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+    const lbl = mk('text');
+    lbl.setAttribute('x', padLeft - 6); lbl.setAttribute('y', y + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('class', 'axis-label');
+    lbl.textContent = fmtNum(niceMax * f, niceMax * f < 5 ? 1 : 0);
+    svg.appendChild(lbl);
+  });
+
+  const groupW = plotW / groups.length;
+  const barGap = 2;
+  groups.forEach((g, gi) => {
+    const nBars = g.bars.length;
+    const maxBarW = 24;
+    const barW = Math.min(maxBarW, (groupW * 0.7 - barGap * (nBars - 1)) / nBars);
+    const groupCenter = padLeft + groupW * gi + groupW / 2;
+    const totalBarsW = barW * nBars + barGap * (nBars - 1);
+    let bx = groupCenter - totalBarsW / 2;
+
+    g.bars.forEach((b) => {
+      const v = b.value || 0;
+      const h = Math.max(v > 0 ? 2 : 0, (v / niceMax) * plotH);
+      const y = padTop + plotH - h;
+      const rect = mk('rect');
+      rect.setAttribute('x', bx); rect.setAttribute('y', y);
+      rect.setAttribute('width', barW); rect.setAttribute('height', h);
+      rect.setAttribute('rx', 4); rect.setAttribute('ry', 4);
+      rect.setAttribute('fill', b.color);
+      rect.setAttribute('class', 'bar-rect');
+      rect.addEventListener('pointermove', (evt) => showTooltip(evt, `<div>${g.label}</div><div class="tt-value">${b.seriesLabel}: ${fmtNum(v, opts.decimals)}</div>`));
+      rect.addEventListener('pointerleave', hideTooltip);
+      svg.appendChild(rect);
+      bx += barW + barGap;
+    });
+
+    const lbl = mk('text');
+    lbl.setAttribute('x', groupCenter); lbl.setAttribute('y', height - padBottom + 16);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('class', 'axis-label');
+    lbl.textContent = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label;
+    svg.appendChild(lbl);
+  });
+
+  // baseline
+  const base = mk('line');
+  base.setAttribute('x1', padLeft); base.setAttribute('x2', width - padRight);
+  base.setAttribute('y1', padTop + plotH); base.setAttribute('y2', padTop + plotH);
+  base.setAttribute('stroke', 'var(--baseline)'); base.setAttribute('stroke-width', '1');
+  svg.appendChild(base);
+}
+
+function renderLegend(containerId, items) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  items.forEach((it) => {
+    const item = el('div', { class: 'legend-item' }, [
+      el('span', { class: 'legend-swatch', style: `background:${it.color}` }, []),
+      text(it.label),
+    ]);
+    c.appendChild(item);
+  });
+}
+
+function renderTableView(tableId, headers, rows) {
+  const t = document.getElementById(tableId);
+  t.innerHTML = '';
+  const thead = el('thead', {}, [el('tr', {}, headers.map((h) => el('th', {}, [text(h)])))]);
+  const tbody = el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, [text(c)])))));
+  t.appendChild(thead); t.appendChild(tbody);
+}
+
+document.querySelectorAll('.table-view-toggle').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const target = document.getElementById(btn.dataset.target);
+    target.classList.toggle('shown');
+    btn.textContent = target.classList.contains('shown') ? 'Hide table' : 'View as table';
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+const filters = { competitor: '', category: '', risk: '', search: '' };
+
+function populateCompetitorFilter() {
+  const sel = document.getElementById('f-competitor');
+  DATA.competitors.forEach((c) => sel.appendChild(el('option', { value: c.name }, [text(c.name)])));
+}
+
+function applyFilters(records) {
+  return records.filter((r) => {
+    if (filters.competitor && r.competitor !== filters.competitor) return false;
+    if (filters.category && r.category !== filters.category) return false;
+    if (filters.risk) {
+      const level = r.risk_level || 'NOT_SCORED';
+      if (level !== filters.risk) return false;
+    }
+    if (filters.search) {
+      const hay = `${r.competitor_plan || ''} ${r.omantel_plan || ''}`.toLowerCase();
+      if (!hay.includes(filters.search.toLowerCase())) return false;
+    }
+    return true;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// KPI row
+// ---------------------------------------------------------------------------
+function renderKpis(filteredRecords) {
+  const container = document.getElementById('kpi-row');
+  container.innerHTML = '';
+
+  const scopedCompetitors = filters.competitor ? DATA.competitors.filter((c) => c.name === filters.competitor) : DATA.competitors;
+  const totalPlans = scopedCompetitors.reduce((s, c) => s + c.total_plans, 0);
+  const totalMatched = filteredRecords.filter((r) => r.gap_analysis_status === 'ANALYZED').length;
+  const totalScored = filteredRecords.filter((r) => r.risk_status === 'SCORED').length;
+  const high = filteredRecords.filter((r) => r.risk_level === 'HIGH').length;
+  const medium = filteredRecords.filter((r) => r.risk_level === 'MEDIUM').length;
+  const low = filteredRecords.filter((r) => r.risk_level === 'LOW').length;
+
+  const tiles = [
+    { label: 'Competitor plans scraped', value: fmtNum(totalPlans, 0), sub: (filters.competitor || DATA.competitors.map((c) => c.name).join(' + ')) },
+    { label: 'Omantel catalog (ATL products)', value: fmtNum(DATA.omantel_atl_products, 0), sub: 'Shared reference for this cycle' },
+    { label: 'Comparable matches found', value: fmtNum(totalMatched, 0) + ' / ' + fmtNum(filteredRecords.length, 0), sub: pct(totalMatched, filteredRecords.length) + '% of scoped plans' },
+    { label: 'Risk-scored plans', value: fmtNum(totalScored, 0), sub: 'Have real usage/ARPU data' },
+    { label: 'High / Medium / Low risk', value: `${high} / ${medium} / ${low}`, sub: 'Of risk-scored plans', statusClass: high > 0 ? 'status-critical' : (medium > 0 ? 'status-warning' : 'status-good') },
+  ];
+
+  tiles.forEach((t) => {
+    container.appendChild(el('div', { class: 'card stat-tile' + (t.statusClass ? ' ' + t.statusClass : '') }, [
+      el('div', { class: 'stat-label' }, [text(t.label)]),
+      el('div', { class: 'stat-value' }, [text(t.value)]),
+      el('div', { class: 'stat-sub' }, [text(t.sub)]),
+    ]));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Competitor comparison section (always all competitors, unaffected by filters)
+// ---------------------------------------------------------------------------
+function renderComparison() {
+  const comps = DATA.competitors;
+
+  renderLegend('legend-risk-score', comps.map((c) => ({ label: c.name, color: competitorColor(c.name) })));
+  renderGroupedBarChart('chart-risk-score', [
+    { label: 'Average risk score', bars: comps.map((c) => ({ seriesLabel: c.name, value: c.avg_risk_score || 0, color: competitorColor(c.name) })) },
+    { label: 'Peak risk score', bars: comps.map((c) => ({ seriesLabel: c.name, value: c.max_risk_score || 0, color: competitorColor(c.name) })) },
+  ], { decimals: 2 });
+  renderTableView('tv-risk-score', ['Competitor', 'Avg risk score', 'Peak risk score'], comps.map((c) => [c.name, fmtNum(c.avg_risk_score), fmtNum(c.max_risk_score)]));
+
+  renderLegend('legend-risk-level', [
+    { label: 'Low', color: STATUS_COLOR.good }, { label: 'Medium', color: STATUS_COLOR.warning }, { label: 'High', color: STATUS_COLOR.critical },
+  ]);
+  renderGroupedBarChart('chart-risk-level', comps.map((c) => ({
+    label: c.name,
+    bars: [
+      { seriesLabel: 'Low', value: (c.risk_level_counts || {}).LOW || 0, color: STATUS_COLOR.good },
+      { seriesLabel: 'Medium', value: (c.risk_level_counts || {}).MEDIUM || 0, color: STATUS_COLOR.warning },
+      { seriesLabel: 'High', value: (c.risk_level_counts || {}).HIGH || 0, color: STATUS_COLOR.critical },
+    ],
+  })), { decimals: 0 });
+  renderTableView('tv-risk-level', ['Competitor', 'Low', 'Medium', 'High'], comps.map((c) => [c.name, (c.risk_level_counts||{}).LOW||0, (c.risk_level_counts||{}).MEDIUM||0, (c.risk_level_counts||{}).HIGH||0]));
+
+  // Headline callout — computed from real numbers, not hardcoded.
+  const byRisk = [...comps].sort((a, b) => (b.avg_risk_score || 0) - (a.avg_risk_score || 0));
+  const higher = byRisk[0], lower = byRisk[1];
+  const byGap = [...comps].sort((a, b) => (a.min_commercial_position_score || 0) - (b.min_commercial_position_score || 0));
+  const worstGap = byGap[0];
+
+  let calloutHtml = '<span class="callout-label">Bottom line</span><br/>';
+  if (higher && lower && higher.avg_risk_score !== lower.avg_risk_score) {
+    calloutHtml += `<strong>${higher.name}</strong> carries the higher realized business risk right now — average risk score <strong>${fmtNum(higher.avg_risk_score)}</strong> vs. <strong>${lower.name}</strong>'s <strong>${fmtNum(lower.avg_risk_score)}</strong>, with a peak of <strong>${fmtNum(higher.max_risk_score)}</strong> on its worst single plan. `;
+  } else {
+    calloutHtml += `${comps.map(c=>c.name).join(' and ')} currently carry similar realized risk. `;
+  }
+  if (worstGap && worstGap.name !== higher.name) {
+    calloutHtml += `Note: <strong>${worstGap.name}</strong> actually has the steeper raw commercial disadvantage on its worst plan (${fmtNum(worstGap.min_commercial_position_score)} points), but that gap sits on lower-exposure Omantel products, so it doesn't translate into the highest risk score today — worth reviewing in its own right.`;
+  }
+  document.getElementById('comparison-callout').innerHTML = calloutHtml;
+
+  const allLow = comps.every((c) => ((c.risk_level_counts||{}).MEDIUM||0) === 0 && ((c.risk_level_counts||{}).HIGH||0) === 0);
+  document.getElementById('calibration-note').textContent = allLow
+    ? 'Note: every scored plan currently falls in the Low tier. This reflects the current risk-scoring thresholds in config/risk_scoring.yaml relative to Omantel’s real (heavily skewed) usage data, not an absence of competitive pressure — see the Average & peak risk score chart for relative comparison, and consider recalibrating the thresholds if this doesn’t match business judgement.'
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// Breakdown charts (category, product type) — grouped by competitor
+// ---------------------------------------------------------------------------
+function renderBreakdowns() {
+  const comps = DATA.competitors;
+
+  renderLegend('legend-category', comps.map((c) => ({ label: c.name, color: competitorColor(c.name) })));
+  renderGroupedBarChart('chart-category', ['prepaid', 'postpaid'].map((cat) => ({
+    label: cat[0].toUpperCase() + cat.slice(1),
+    bars: comps.map((c) => ({ seriesLabel: c.name, value: (c.category_counts||{})[cat] || 0, color: competitorColor(c.name) })),
+  })), { decimals: 0 });
+  renderTableView('tv-category', ['Category', ...comps.map(c=>c.name)], ['prepaid','postpaid'].map((cat) => [cat, ...comps.map(c => (c.category_counts||{})[cat]||0)]));
+
+  const allTypes = Array.from(new Set(comps.flatMap((c) => Object.keys(c.product_type_counts || {})))).sort();
+  renderLegend('legend-product-type', comps.map((c) => ({ label: c.name, color: competitorColor(c.name) })));
+  renderGroupedBarChart('chart-product-type', allTypes.map((pt) => ({
+    label: pt,
+    bars: comps.map((c) => ({ seriesLabel: c.name, value: (c.product_type_counts||{})[pt] || 0, color: competitorColor(c.name) })),
+  })), { decimals: 0 });
+  renderTableView('tv-product-type', ['Type', ...comps.map(c=>c.name)], allTypes.map((pt) => [pt, ...comps.map(c => (c.product_type_counts||{})[pt]||0)]));
+}
+
+function renderMatching() {
+  const comps = DATA.competitors;
+  const statuses = ['MATCHED', 'NO_GOOD_MATCH', 'NO_DIRECT_MATCH'];
+  const statusLabels = { MATCHED: 'Matched', NO_GOOD_MATCH: 'No good match', NO_DIRECT_MATCH: 'No direct match' };
+  renderLegend('legend-match', statuses.map((s) => ({ label: statusLabels[s], color: STATUS_COLOR[MATCH_STATUS_KEY[s]] })));
+  renderGroupedBarChart('chart-match', comps.map((c) => ({
+    label: c.name,
+    bars: statuses.map((s) => ({ seriesLabel: statusLabels[s], value: (c.match_status_counts||{})[s] || 0, color: STATUS_COLOR[MATCH_STATUS_KEY[s]] })),
+  })), { decimals: 0 });
+  renderTableView('tv-match', ['Competitor', ...statuses.map(s=>statusLabels[s])], comps.map((c) => [c.name, ...statuses.map(s => (c.match_status_counts||{})[s]||0)]));
+}
+
+// ---------------------------------------------------------------------------
+// Main sortable/filterable table
+// ---------------------------------------------------------------------------
+let sortState = { key: 'risk_score', dir: 'desc' };
+let expandedRow = null;
+
+function sortRecords(records) {
+  const { key, dir } = sortState;
+  const sorted = [...records].sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av === null || av === undefined) av = dir === 'desc' ? -Infinity : Infinity;
+    if (bv === null || bv === undefined) bv = dir === 'desc' ? -Infinity : Infinity;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return sorted;
+}
+
+function metricMiniTable(metricGaps) {
+  if (!metricGaps) return '<p>No metric detail.</p>';
+  const rows = Object.entries(metricGaps).map(([metric, g]) => {
+    const posKey = POSITION_STATUS_KEY[g.position] || 'neutral';
+    return `<tr><td>${metric.toUpperCase()}</td><td>${g.competitor === null ? '—' : g.competitor}</td><td>${g.omantel === null ? '—' : g.omantel}</td><td>${g.gap_pct === null || g.gap_pct === undefined ? '—' : g.gap_pct + '%'}</td><td>${badgeHtml(g.position || 'NOT_SCORED', posKey)}</td></tr>`;
+  }).join('');
+  return `<table class="metric-mini-table"><thead><tr><td><b>Metric</b></td><td><b>Competitor</b></td><td><b>Omantel</b></td><td><b>Gap %</b></td><td><b>Position</b></td></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderMainTable(filteredRecords) {
+  const tbody = document.getElementById('main-table-body');
+  tbody.innerHTML = '';
+  const sorted = sortRecords(filteredRecords);
+
+  if (sorted.length === 0) {
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: '9', class: 'empty-state' }, [text('No plans match the current filters.')])]));
+    return;
+  }
+
+  sorted.forEach((r, i) => {
+    const rowId = 'row-' + i + '-' + (r.competitor_plan_id || i);
+    const posKey = POSITION_STATUS_KEY[r.overall_position] || 'neutral';
+    const riskKey = RISK_STATUS_KEY[r.risk_level] || 'neutral';
+
+    const tr = el('tr', { class: 'plan-row', 'data-row-id': rowId }, [
+      el('td', {}, [text(r.competitor)]),
+      el('td', {}, [text(r.competitor_plan)]),
+      el('td', {}, [text(r.omantel_plan || '—')]),
+      el('td', {}, [text(r.category || '—')]),
+      el('td', {}, [text(r.product_type || '—')]),
+      el('td', { html: r.overall_position ? badgeHtml(r.overall_position.replace('_', ' '), posKey) : badgeHtml('Not analyzed', 'neutral') }, []),
+      el('td', {}, [text(r.primary_attention_area || '—')]),
+      el('td', { class: 'num' }, [text(r.risk_score === null || r.risk_score === undefined ? '—' : fmtNum(r.risk_score))]),
+      el('td', { html: badgeHtml((r.risk_level || 'NOT SCORED').replace('_',' '), riskKey) }, []),
+    ]);
+    tr.addEventListener('click', () => toggleDetail(rowId));
+    tbody.appendChild(tr);
+
+    const detailTr = el('tr', { class: 'detail-row', id: 'detail-' + rowId }, [
+      el('td', { colspan: '9' }, [el('div', { class: 'detail-grid', html:
+        `<div><h4>Gap summary</h4><p>${r.gap_summary ? escapeHtml(r.gap_summary) : (r.gap_analysis_status === 'ANALYZED' ? 'No narrative yet — needs a Scored risk result.' : 'Not analyzed: ' + escapeHtml(r.match_status || ''))}</p>
+          <h4 style="margin-top:10px;">Business explanation</h4><p>${r.business_explanation ? escapeHtml(r.business_explanation) : '—'}</p></div>
+        <div><h4>Metric-by-metric</h4>${metricMiniTable(r.metric_gaps)}</div>
+        <div><h4>Risk drivers</h4><p>${r.risk_reasons ? escapeHtml(r.risk_reasons) : '—'}</p>
+          <h4 style="margin-top:10px;">Competitor / Omantel advantages</h4><p><strong>Competitor:</strong> ${r.competitor_advantages || '—'}<br/><strong>Omantel:</strong> ${r.omantel_advantages || '—'}</p>
+          ${r.capability_gaps ? `<h4 style="margin-top:10px;">Capability gaps</h4><p>${escapeHtml(r.capability_gaps)}</p>` : ''}
+        </div>` }, [])]),
+    ]);
+    tbody.appendChild(detailTr);
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function toggleDetail(rowId) {
+  const detail = document.getElementById('detail-' + rowId);
+  if (expandedRow && expandedRow !== detail) expandedRow.classList.remove('shown');
+  detail.classList.toggle('shown');
+  expandedRow = detail.classList.contains('shown') ? detail : null;
+}
+
+document.querySelectorAll('#main-table thead th[data-key]').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+    else { sortState.key = key; sortState.dir = 'desc'; }
+    document.querySelectorAll('#main-table thead th').forEach((h) => { h.classList.remove('sorted'); h.removeAttribute('data-arrow'); });
+    th.classList.add('sorted');
+    th.setAttribute('data-arrow', sortState.dir === 'asc' ? '▲' : '▼');
+    rerender();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No-match table
+// ---------------------------------------------------------------------------
+function renderNoMatchTable() {
+  const tbody = document.getElementById('no-match-table-body');
+  tbody.innerHTML = '';
+  const rows = DATA.no_match.filter((r) => !filters.competitor || r.competitor === filters.competitor);
+  if (rows.length === 0) {
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: '6', class: 'empty-state' }, [text('No portfolio gaps for the current filter.')])]));
+    return;
+  }
+  rows.forEach((r) => {
+    const key = MATCH_STATUS_KEY[r.match_status] || 'neutral';
+    tbody.appendChild(el('tr', {}, [
+      el('td', {}, [text(r.competitor)]),
+      el('td', {}, [text(r.competitor_plan)]),
+      el('td', {}, [text(r.category || '—')]),
+      el('td', {}, [text(r.product_type || '—')]),
+      el('td', { html: badgeHtml((r.match_status||'').replace(/_/g,' '), key) }, []),
+      el('td', {}, [text(r.reason || '—')]),
+    ]));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CSV export (client-side, current filtered+sorted view)
+// ---------------------------------------------------------------------------
+function exportCsv(records) {
+  const cols = ['competitor','competitor_plan','omantel_plan','category','product_type','match_status','overall_position','commercial_position_score','primary_attention_area','risk_score','risk_level','risk_reasons','gap_summary','key_issue','business_explanation'];
+  const escapeCsv = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return /[",\n]/.test(s) ? `"${s}"` : s;
+  };
+  const lines = [cols.join(',')];
+  sortRecords(records).forEach((r) => lines.push(cols.map((c) => escapeCsv(r[c])).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'market_pulse_plans_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Wire up filters + initial render
+// ---------------------------------------------------------------------------
+function rerender() {
+  const filtered = applyFilters(DATA.records);
+  renderKpis(filtered);
+  renderMainTable(filtered);
+  renderNoMatchTable();
+  document.getElementById('result-count').textContent = `${filtered.length} of ${DATA.records.length} plans shown`;
+}
+
+populateCompetitorFilter();
+document.getElementById('f-competitor').addEventListener('change', (e) => { filters.competitor = e.target.value; rerender(); });
+document.getElementById('f-category').addEventListener('change', (e) => { filters.category = e.target.value; rerender(); });
+document.getElementById('f-risk').addEventListener('change', (e) => { filters.risk = e.target.value; rerender(); });
+document.getElementById('f-search').addEventListener('input', (e) => { filters.search = e.target.value; rerender(); });
+document.getElementById('reset-filters').addEventListener('click', () => {
+  filters.competitor = ''; filters.category = ''; filters.risk = ''; filters.search = '';
+  document.getElementById('f-competitor').value = '';
+  document.getElementById('f-category').value = '';
+  document.getElementById('f-risk').value = '';
+  document.getElementById('f-search').value = '';
+  rerender();
+});
+document.getElementById('export-csv').addEventListener('click', () => exportCsv(applyFilters(DATA.records)));
+
+// initial sort indicator
+document.querySelector('#main-table thead th[data-key="risk_score"]').classList.add('sorted');
+document.querySelector('#main-table thead th[data-key="risk_score"]').setAttribute('data-arrow', '▼');
+
+document.getElementById('header-meta').innerHTML =
+  `Generated ${new Date(DATA.generated_at).toLocaleString()} · Competitors: ${DATA.competitors.map(c => `${c.name} (<code>${c.run_id}</code>)`).join(', ')}`;
+
+document.getElementById('footer').innerHTML =
+  `Risk-scoring thresholds and metric weights are configurable in <code>config/risk_scoring.yaml</code> — see the calibration note above if risk levels look compressed toward Low. ` +
+  `Narrative text is LLM-generated from the calculated facts (never used to recompute scores) or a deterministic fallback when the LLM is unavailable — see the "narrative_source" field in the exported CSV. ` +
+  `Regenerate this report after new runs with <code>python scripts/generate_business_report.py</code>.`;
+
+renderComparison();
+renderBreakdowns();
+renderMatching();
+rerender();
+
+window.addEventListener('resize', () => { renderComparison(); renderBreakdowns(); renderMatching(); });
+</script>
+</body>
+</html>

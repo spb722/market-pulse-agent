@@ -1,0 +1,146 @@
+# ==============================================================================
+# Market Pulse — Gap Analysis & Risk Scoring Configuration
+# ==============================================================================
+#
+# These are the tunable numbers behind Step 4 (gap analysis, produces each
+# plan's "commercial_position_score") and Step 5 (risk scoring, produces the
+# final risk_score / risk_level shown to the business).
+#
+# Every default value below matches the ORIGINAL reference implementation
+# exactly -- editing this file changes real business outcomes (risk scores,
+# risk levels shown to product/campaign teams), so change values
+# deliberately, one at a time, and re-check results after each change.
+#
+# This file is loaded once and cached; restart the API server after editing
+# it for changes to take effect.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# STEP 4 -- Gap Analysis
+# ------------------------------------------------------------------------------
+gap_analysis:
+
+  # How close two plans' normalized advantage (-1..1) on a single metric
+  # (price/data/voice/idd/sms/validity) must be to call it a tie ("PARITY")
+  # instead of declaring one side ahead.
+  #   RAISE this  -> more metrics get called "PARITY" (harder to trigger an
+  #                  advantage/disadvantage label).
+  #   LOWER this  -> fewer ties; smaller differences start counting as one
+  #                  side being ahead.
+  parity_threshold: 0.05
+
+  # How far a plan's final weighted commercial score (roughly -100..+100)
+  # needs to be from zero before the WHOLE PLAN gets labeled
+  # OMANTEL_ADVANTAGE or COMPETITOR_ADVANTAGE instead of BALANCED.
+  # (Enter a positive number -- the code applies +/- automatically:
+  #  score > threshold -> OMANTEL_ADVANTAGE, score < -threshold -> COMPETITOR_ADVANTAGE.)
+  #   RAISE this  -> only clearly one-sided plans get labeled; more plans
+  #                  end up "BALANCED".
+  #   LOWER this  -> smaller gaps start getting labeled as somebody being
+  #                  ahead, instead of "roughly even".
+  overall_position_threshold: 10
+
+  # How much each metric counts toward a plan's overall commercial score,
+  # broken down by what KIND of plan it is. Each product type's weights
+  # below should add up to 1.0 (100%).
+  #
+  # If a metric can't be scored for a given plan (e.g. no IDD data on
+  # either side), it's automatically dropped and the REMAINING weights for
+  # that plan are rescaled to still sum to 1.0 -- you do not need to
+  # manually rebalance for missing data.
+  #
+  # RAISING a metric's weight makes that dimension matter MORE to the
+  # final score for that plan type. LOWERING it makes that dimension
+  # matter LESS. You can also add or remove a metric key entirely for a
+  # given product type (e.g. add "sms" to COMBO) -- just make sure the
+  # remaining numbers for that type still sum to 1.0.
+  #
+  # Valid metric names: price, data, voice, idd, sms, validity.
+  # "OTHER" must always be present -- it's the fallback used for any plan
+  # whose product type isn't explicitly listed below.
+  weights:
+
+    # A plan that meaningfully combines multiple services (e.g. data + voice).
+    COMBO:
+      price: 0.30      # how much cheaper/pricier matters
+      data: 0.30       # data allowance matters equally to price
+      voice: 0.20      # voice minutes matter somewhat less than price/data
+      idd: 0.10        # international calling matters least
+      validity: 0.10   # how long the plan lasts matters least
+
+    # A plan whose principal commercial product is data-only.
+    DATA:
+      price: 0.35
+      data: 0.50       # data-only plans are almost entirely about data volume
+      validity: 0.15
+
+    # A plan whose principal commercial product is voice-only.
+    VOICE:
+      price: 0.35
+      voice: 0.50      # voice-only plans are almost entirely about minutes
+      validity: 0.15
+
+    # A plan whose principal commercial product is international calling.
+    IDD:
+      price: 0.35
+      idd: 0.50        # IDD-only plans are almost entirely about IDD minutes
+      validity: 0.15
+
+    # A plan whose principal commercial product is roaming.
+    ROAMING:
+      price: 0.30
+      data: 0.35       # roaming data usually matters most of all
+      voice: 0.20
+      validity: 0.15
+
+    # A plan whose principal commercial product is SMS.
+    SMS:
+      price: 0.35
+      sms: 0.50        # SMS-only plans are almost entirely about SMS volume
+      validity: 0.15
+
+    # Fallback for any product type not listed above (e.g. unclassified/OTHER).
+    # Kept intentionally simple: only price and validity are compared.
+    OTHER:
+      price: 0.50
+      validity: 0.50
+
+# ------------------------------------------------------------------------------
+# STEP 5 -- Risk Scoring
+# ------------------------------------------------------------------------------
+risk_analysis:
+
+  # How far behind (negative commercial_position_score from Step 4) Omantel
+  # needs to be before a plan registers ANY competitive threat at all.
+  # (Enter a positive number -- the code checks "score >= -threshold means
+  #  zero threat" internally.) Anything less bad than this scores threat =
+  # 0, no matter how real the underlying gap is.
+  #   RAISE this  -> only more severe disadvantages count as a threat;
+  #                  more plans get threat = 0.
+  #   LOWER this  -> smaller/milder disadvantages start registering as a
+  #                  real (if small) threat instead of being ignored.
+  competitive_threat_threshold: 10
+
+  # How much "number of customers affected" vs. "revenue affected" counts
+  # toward the final business_exposure_score. Must sum to 1.0.
+  business_exposure_weights:
+    customer_weight: 0.60   # raise if headcount/market-share matters most to you
+    revenue_weight: 0.40    # raise if revenue impact matters most to you
+
+  # The final 0-100 risk_score cutoffs for calling something LOW, MEDIUM,
+  # or HIGH risk.
+  #   risk_score <  medium         -> LOW
+  #   medium <= risk_score < high  -> MEDIUM
+  #   risk_score >= high           -> HIGH
+  #
+  # IMPORTANT: these defaults were originally tuned against mock test data
+  # with a much flatter (less skewed) customer-usage distribution than real
+  # Omantel data tends to have. If most/all of your REAL results are coming
+  # back LOW, it is very likely these two numbers are simply set too high
+  # for your real data's actual score range -- LOWER them (e.g. medium: 5,
+  # high: 15) rather than assuming something is broken. Check the real
+  # distribution of risk_score across your actual runs and set these to
+  # values that actually separate your real data into meaningful buckets.
+  risk_level_thresholds:
+    medium: 30   # risk_score at or above this -> MEDIUM
+    high: 60     # risk_score at or above this -> HIGH

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.env
+runs/
+logs/
+
+# Requested additions
+.claude/
+tests/
+cloud.md
+reference/
