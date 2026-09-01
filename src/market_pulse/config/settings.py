@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -48,6 +48,41 @@ class Settings(BaseSettings):
     openai_model: str = "openai/gpt-oss-20b"
     openai_temperature: float = 0
     openai_max_retries: int = 2
+
+    # --- Minimal Langfuse LLM metrics ------------------------------------
+    # Manual instrumentation keeps payload capture explicit and configurable.
+    # ``cached`` is reported as the number of exact Redis response-cache hits.
+    langfuse_enabled: bool = False
+    langfuse_capture_io: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: SecretStr = SecretStr("")
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
+    langfuse_environment: str = "development"
+    # Explicit rates keep total cost correct for local/custom models that are
+    # not present in Langfuse's model-price catalogue. Local inference is 0.
+    langfuse_input_cost_per_million_tokens: float = Field(default=0.0, ge=0)
+    langfuse_output_cost_per_million_tokens: float = Field(default=0.0, ge=0)
+
+    # --- Exact LLM request/response cache ---------------------------------
+    # Disabled by default so an existing deployment does not unexpectedly
+    # acquire Redis as a hard dependency. Enable with LLM_CACHE_ENABLED=true.
+    # REDIS_URL supports the standard redis-py URI format, including auth:
+    # redis://:password@localhost:6379/0.
+    redis_url: str = "redis://localhost:6379/0"
+    llm_cache_enabled: bool = False
+    llm_cache_fail_open: bool = True
+    llm_cache_namespace: str = "market-pulse:llm"
+    llm_cache_key_version: str = "v1"
+
+    # A default is retained for future cache stages. Every current LLM stage
+    # has an explicit override so operators can tune freshness independently.
+    llm_cache_default_ttl_seconds: int = Field(default=15_552_000, gt=0)
+    llm_cache_competitor_ttl_seconds: int = Field(default=15_552_000, gt=0)
+    llm_cache_omantel_ttl_seconds: int = Field(default=31_536_000, gt=0)
+    llm_cache_matching_ttl_seconds: int = Field(default=15_552_000, gt=0)
+    llm_cache_narrative_ttl_seconds: int = Field(default=7_776_000, gt=0)
+    llm_cache_ttl_jitter_percent: int = Field(default=10, ge=0, le=50)
+    llm_cache_socket_timeout_seconds: float = Field(default=2.0, gt=0)
 
     # --- Run-oriented orchestration/storage (see docs/architecture.md) -----
     # Root directory for the file-based run/competitor-run/stage-result

@@ -29,6 +29,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
+from market_pulse.llm.cache import (
+    LLMResponseCache,
+    PLAN_MATCHING,
+    invoke_structured_cached,
+)
 from market_pulse.schemas.matching import MatchDecision
 
 logger = logging.getLogger(__name__)
@@ -37,6 +42,7 @@ Plan = dict[str, Any]
 
 # MatchChain.invoke({"competitor": str, "candidates": str}) -> MatchDecision
 MatchChain = Callable[[dict[str, str]], MatchDecision]
+_CACHE_PROMPT_VERSION = "plan-matching-v1"
 
 
 match_prompt = ChatPromptTemplate.from_messages(
@@ -137,6 +143,7 @@ def decide_match(
     competitor_plan_compact: Plan,
     top_candidates: list[dict[str, Any]],
     chain: Optional[MatchChain] = None,
+    cache: LLMResponseCache | None = None,
 ) -> MatchDecision:
     """Ask the LLM to select the most comparable Omantel candidate.
 
@@ -147,11 +154,19 @@ def decide_match(
     no filtering/scoring itself -- it is a thin invocation wrapper.
     """
 
-    chain = chain or get_match_chain()
-
-    return chain.invoke(
-        {
-            "competitor": json.dumps(competitor_plan_compact, ensure_ascii=False),
-            "candidates": json.dumps(top_candidates, ensure_ascii=False),
-        }
+    request = {
+        "competitor": json.dumps(competitor_plan_compact, ensure_ascii=False),
+        "candidates": json.dumps(top_candidates, ensure_ascii=False),
+    }
+    return invoke_structured_cached(
+        stage=PLAN_MATCHING,
+        request=request,
+        output_model=MatchDecision,
+        prompt_version=_CACHE_PROMPT_VERSION,
+        invoke=lambda config=None: (
+            (chain or get_match_chain()).invoke(request, config=config)
+            if config is not None
+            else (chain or get_match_chain()).invoke(request)
+        ),
+        cache=cache,
     )

@@ -45,6 +45,29 @@ pointing at something other than OpenAI directly — a local Ollama instance, Gr
 OpenAI-compatible endpoint, etc.). See `.env.example` for every configurable setting
 (storage location, CSV paths, logging, formula config).
 
+To reuse exact structured LLM responses across weekly/monthly runs, also configure
+Redis and enable the cache:
+
+```dotenv
+REDIS_URL=redis://:password@localhost:6379/0
+LLM_CACHE_ENABLED=true
+```
+
+The cache is per plan/match/narrative rather than per run. TTLs have a global default
+and per-stage overrides in `.env.example`; input, prompt, model or output-schema
+changes automatically create a new cache key. Redis failures are fail-open by default,
+so the pipeline continues with live LLM calls.
+
+To send LLM metrics to Langfuse, set `LANGFUSE_ENABLED=true` and configure its
+public key, secret key, and base URL. Each structured-call observation contains
+input tokens, output tokens, Redis response-cache hits (`cached`), and total
+cost. Set `LANGFUSE_CAPTURE_IO=true` to additionally send the logical request
+and structured response for both live calls and Redis cache hits; leave it
+disabled when business payloads must not leave the application.
+The example configuration estimates cost using Claude Haiku 4.5 standard API
+pricing ($1/M input tokens and $5/M output tokens). These rates affect reporting
+only and can be changed independently of the configured inference model.
+
 ### 3. Run the tests
 
 ```bash

@@ -54,6 +54,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
+from market_pulse.llm.cache import (
+    LLMResponseCache,
+    NARRATIVE_GENERATION,
+    invoke_structured_cached,
+)
 from market_pulse.schemas.narrative import GapNarrative
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,7 @@ Step5Item = dict[str, Any]
 
 # ReportChain.invoke({"facts": str}) -> GapNarrative
 ReportChain = Callable[[dict[str, str]], GapNarrative]
+_CACHE_PROMPT_VERSION = "gap-narrative-v1"
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +375,7 @@ def generate_narrative(
     step4_item: Step4Item,
     step5_item: Step5Item,
     chain: Optional[ReportChain] = None,
+    cache: LLMResponseCache | None = None,
 ) -> tuple[dict[str, str], str]:
     """Generate a gap narrative for one matched competitor/Omantel pair.
 
@@ -387,10 +394,18 @@ def generate_narrative(
     facts = build_llm_facts(step4_item, step5_item)
 
     try:
-        chain = chain or get_report_chain()
-
-        narrative = chain.invoke(
-            {"facts": json.dumps(facts, ensure_ascii=False, indent=2)}
+        request = {"facts": json.dumps(facts, ensure_ascii=False, indent=2)}
+        narrative = invoke_structured_cached(
+            stage=NARRATIVE_GENERATION,
+            request=request,
+            output_model=GapNarrative,
+            prompt_version=_CACHE_PROMPT_VERSION,
+            invoke=lambda config=None: (
+                (chain or get_report_chain()).invoke(request, config=config)
+                if config is not None
+                else (chain or get_report_chain()).invoke(request)
+            ),
+            cache=cache,
         )
 
         return narrative.model_dump(), "LLM_GENERATED"

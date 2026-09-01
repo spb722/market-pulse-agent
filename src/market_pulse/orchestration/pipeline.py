@@ -39,6 +39,8 @@ from typing import Any
 from uuid import uuid4
 
 from market_pulse.config.settings import Settings
+from market_pulse.llm.cache import get_llm_cache_stats
+from market_pulse.llm.langfuse_metrics import flush_langfuse
 from market_pulse.schemas.runs import STAGE_NAMES, CompetitorRun, Run, StageResult, utcnow
 from market_pulse.services.competitor_normalization_service import (
     RawPayload,
@@ -64,6 +66,22 @@ logger = logging.getLogger(__name__)
 # even across unrelated runs. Accepted trade-off for simplicity -- this is a
 # low-frequency, manually-triggered operation, not a high-throughput system.
 _omantel_prep_lock = threading.Lock()
+
+
+def _cache_stats_delta(
+    before: dict[str, dict[str, int]], after: dict[str, dict[str, int]]
+) -> dict[str, dict[str, int]]:
+    delta: dict[str, dict[str, int]] = {}
+    for stage in set(before) | set(after):
+        events = set(before.get(stage, {})) | set(after.get(stage, {}))
+        stage_delta = {
+            event: after.get(stage, {}).get(event, 0) - before.get(stage, {}).get(event, 0)
+            for event in events
+        }
+        nonzero = {event: count for event, count in stage_delta.items() if count}
+        if nonzero:
+            delta[stage] = nonzero
+    return delta
 
 
 def generate_run_id() -> str:
@@ -284,6 +302,7 @@ def process_competitor(
     instead.
     """
 
+    cache_stats_before = get_llm_cache_stats()
     cr = repo.get_competitor_run(run_id, competitor_run_id)
 
     if cr is None:
@@ -487,4 +506,11 @@ def process_competitor(
         repo.save_competitor_run(cr)
 
     finally:
+        cache_delta = _cache_stats_delta(cache_stats_before, get_llm_cache_stats())
+        logger.info(
+            "%s | LLM cache activity: %s",
+            _ctx(run_id, competitor_run_id, stage="llm_cache"),
+            cache_delta or {},
+        )
+        flush_langfuse(settings)
         _refresh_run_aggregate(run_id, repo)

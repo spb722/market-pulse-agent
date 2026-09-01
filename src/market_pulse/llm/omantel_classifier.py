@@ -38,6 +38,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
+from market_pulse.llm.cache import (
+    LLMResponseCache,
+    OMANTEL_ENRICHMENT,
+    invoke_structured_batch_cached,
+    invoke_structured_cached,
+)
 from market_pulse.schemas.omantel import OmantelSemanticEnrichment
 
 logger = logging.getLogger(__name__)
@@ -46,6 +52,7 @@ Plan = dict[str, Any]
 
 # SemanticChain.invoke({"plan_json": str}) -> OmantelSemanticEnrichment
 SemanticChain = Callable[[dict[str, str]], OmantelSemanticEnrichment]
+_CACHE_PROMPT_VERSION = "omantel-semantic-enrichment-v1"
 
 
 semantic_prompt = ChatPromptTemplate.from_messages(
@@ -139,7 +146,11 @@ def get_semantic_chain(llm: Optional[ChatOpenAI] = None) -> SemanticChain:
     return semantic_prompt | structured_llm
 
 
-def enrich_omantel_plan(plan: Plan, chain: Optional[SemanticChain] = None) -> Plan:
+def enrich_omantel_plan(
+    plan: Plan,
+    chain: Optional[SemanticChain] = None,
+    cache: LLMResponseCache | None = None,
+) -> Plan:
     """Semantically enrich a single normalized Omantel plan.
 
     Merges the result as ``llm_enrichment`` into a copy of ``plan``. Raises
@@ -147,9 +158,19 @@ def enrich_omantel_plan(plan: Plan, chain: Optional[SemanticChain] = None) -> Pl
     isolation should use ``classify_omantel_plans``.
     """
 
-    chain = chain or get_semantic_chain()
-
-    llm_result = chain.invoke({"plan_json": json.dumps(plan, ensure_ascii=False)})
+    request = {"plan_json": json.dumps(plan, ensure_ascii=False)}
+    llm_result = invoke_structured_cached(
+        stage=OMANTEL_ENRICHMENT,
+        request=request,
+        output_model=OmantelSemanticEnrichment,
+        prompt_version=_CACHE_PROMPT_VERSION,
+        invoke=lambda config=None: (
+            (chain or get_semantic_chain()).invoke(request, config=config)
+            if config is not None
+            else (chain or get_semantic_chain()).invoke(request)
+        ),
+        cache=cache,
+    )
 
     enriched = plan.copy()
 
@@ -160,7 +181,9 @@ def enrich_omantel_plan(plan: Plan, chain: Optional[SemanticChain] = None) -> Pl
 
 
 def classify_omantel_plans(
-    plans: list[Plan], chain: Optional[SemanticChain] = None
+    plans: list[Plan],
+    chain: Optional[SemanticChain] = None,
+    cache: LLMResponseCache | None = None,
 ) -> tuple[list[Plan], list[dict[str, Any]]]:
     """Semantically enrich a batch of normalized Omantel plans.
 
@@ -181,8 +204,17 @@ def classify_omantel_plans(
 
     inputs = [{"plan_json": json.dumps(plan, ensure_ascii=False)} for plan in plans]
 
-    results = chain.batch(
-        inputs, config={"max_concurrency": 5}, return_exceptions=True
+    results = invoke_structured_batch_cached(
+        stage=OMANTEL_ENRICHMENT,
+        requests=inputs,
+        output_model=OmantelSemanticEnrichment,
+        prompt_version=_CACHE_PROMPT_VERSION,
+        invoke_batch=lambda requests, config=None: chain.batch(
+            requests,
+            config={"max_concurrency": 5, **(config or {})},
+            return_exceptions=True,
+        ),
+        cache=cache,
     )
 
     enriched_plans: list[Plan] = []

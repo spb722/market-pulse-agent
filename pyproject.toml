@@ -12,11 +12,13 @@ dependencies = [
     "pydantic-settings>=2,<3",
     "langchain-core>=0.3,<2",
     "langchain-openai>=0.2",
+    "langfuse>=4.15.1,<5",
     "pandas>=2,<3",
     "numpy>=1.26",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pyyaml>=6",
+    "redis>=6.4,<7",
 ]
 
 [project.optional-dependencies]

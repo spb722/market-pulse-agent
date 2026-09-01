@@ -28,6 +28,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
+from market_pulse.llm.cache import (
+    COMPETITOR_CLASSIFICATION,
+    LLMResponseCache,
+    invoke_structured_cached,
+)
 from market_pulse.schemas.competitor import PlanEnrichment
 
 logger = logging.getLogger(__name__)
@@ -36,6 +41,7 @@ Plan = dict[str, Any]
 
 # ClassificationChain.invoke({"plan_json": str}) -> PlanEnrichment
 ClassificationChain = Callable[[dict[str, str]], PlanEnrichment]
+_CACHE_PROMPT_VERSION = "competitor-classification-v1"
 
 
 classification_prompt = ChatPromptTemplate.from_messages(
@@ -115,17 +121,29 @@ def get_classification_chain(llm: Optional[ChatOpenAI] = None) -> Classification
     return classification_prompt | structured_llm
 
 
-def enrich_one_plan(plan: Plan, chain: Optional[ClassificationChain] = None) -> Plan:
+def enrich_one_plan(
+    plan: Plan,
+    chain: Optional[ClassificationChain] = None,
+    cache: LLMResponseCache | None = None,
+) -> Plan:
     """Classify a single normalized plan and merge the result as ``llm_enrichment``.
 
     Raises whatever the underlying chain raises; callers that want batch
     failure isolation should catch exceptions (see ``classify_plans``).
     """
 
-    chain = chain or get_classification_chain()
-
-    llm_result = chain.invoke(
-        {"plan_json": json.dumps(plan, ensure_ascii=False)}
+    request = {"plan_json": json.dumps(plan, ensure_ascii=False)}
+    llm_result = invoke_structured_cached(
+        stage=COMPETITOR_CLASSIFICATION,
+        request=request,
+        output_model=PlanEnrichment,
+        prompt_version=_CACHE_PROMPT_VERSION,
+        invoke=lambda config=None: (
+            (chain or get_classification_chain()).invoke(request, config=config)
+            if config is not None
+            else (chain or get_classification_chain()).invoke(request)
+        ),
+        cache=cache,
     )
 
     enriched = plan.copy()
@@ -137,7 +155,9 @@ def enrich_one_plan(plan: Plan, chain: Optional[ClassificationChain] = None) -> 
 
 
 def classify_plans(
-    plans: list[Plan], chain: Optional[ClassificationChain] = None
+    plans: list[Plan],
+    chain: Optional[ClassificationChain] = None,
+    cache: LLMResponseCache | None = None,
 ) -> tuple[list[Plan], list[dict[str, Any]]]:
     """Classify a batch of normalized plans.
 
@@ -155,7 +175,7 @@ def classify_plans(
 
     for plan in plans:
         try:
-            enriched_plans.append(enrich_one_plan(plan, chain=chain))
+            enriched_plans.append(enrich_one_plan(plan, chain=chain, cache=cache))
         except Exception as exc:  # noqa: BLE001 - intentional isolation boundary
             plan_name = plan.get("plan_name")
             logger.warning("Plan classification failed for %r: %s", plan_name, exc)
