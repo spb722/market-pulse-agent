@@ -305,14 +305,27 @@ The one thing still worth knowing: that data comes from a **file**, not an API c
 |---|---|---|
 | 1 | `POST /runs` | Start a new analysis cycle. Do this once per cycle. |
 | 2 | `POST /runs/{run_id}/competitors` | Submit one competitor's data. Repeat per competitor, same `run_id`. Returns immediately. |
-| 3 | `GET /runs/{run_id}` | Overall run status + all its competitors at a glance. |
+| 3 | `GET /runs/{run_id}` | Overall run status + competitors + `report_status`, `report_path`, and `report_error`. |
 | 4 | `GET /runs/{run_id}/competitors` | Full list of competitor runs for this run. |
 | 5 | `GET /runs/{run_id}/competitors/{competitor_run_id}` | One competitor's status, broken down by stage. Poll this. |
 | 6 | `GET /runs/{run_id}/competitors/{competitor_run_id}/results/{stage}` | The actual data for one stage. `{stage}` is one of `competitor_normalization`, `plan_matching`, `gap_analysis`, `risk_analysis`, `narrative_generation`. |
+| 7 | `POST /runs/{run_id}/report` | Generate the report from completed saved results. No request body. Returns HTTP 202; poll the existing run-status endpoint for the absolute report path. |
+
+Report generation starts only after Omantel and all competitor stages are
+completed (otherwise **409**, or **404** for an unknown run). It reuses the
+existing cached executive analysis and does not rerun competitors or scoring.
+The API returns JSON, not HTML. On completion, `report_path` points to
+`reports/{run_id}/market_pulse_business_report.html` on the server; configure the
+output root with `REPORTS_DIR`. The caller needs access to that filesystem.
+Duplicate requests while a report is building are coalesced. After a failure
+or server restart, POST again to retry. See the README's report section for the
+full workflow and background-task limitations.
 
 **Status values you'll see:**
+
 - Run / Competitor: `CREATED` → `PROCESSING` → `COMPLETED` / `FAILED` / `PARTIAL` (run-level only, means "mixed results")
 - Stage: `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`
+- Report: `NOT_GENERATED` → `PROCESSING` → `COMPLETED` / `FAILED`; only `COMPLETED` has a `report_path`.
 
 **Error responses:**
 - `404` — the run/competitor you asked for doesn't exist

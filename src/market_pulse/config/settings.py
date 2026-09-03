@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # Root directory for the file-based run/competitor-run/stage-result
     # repository. Overridable via the ``RUNS_DIR`` environment variable.
     runs_dir: str = "runs"
+    # Generated HTML is isolated by run under this directory.
+    reports_dir: str = "reports"
 
     # Shared Omantel reference catalogue CSV locations (see
     # docs/architecture.md section 5). These real files already exist in the

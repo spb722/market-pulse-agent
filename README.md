@@ -126,8 +126,53 @@ similarity, gaps, exposure, priority, risk, and the rationale remain determinist
 The resulting run-level analysis is also saved to
 `runs/RUN-XXXX/portfolio_analysis.json`.
 
-Open `reports/market_pulse_business_report.html` directly in a browser — no server
-required and no LLM calls are made by the browser.
+For `--run-id`, open `reports/RUN-XXXX/market_pulse_business_report.html` directly
+in a browser. No LLM calls are made by the browser. The legacy no-argument and
+explicit `--run` selections still write `reports/market_pulse_business_report.html`.
+
+### Generate through the API
+
+Once Omantel and every competitor's stages have completed, submit the existing run
+ID (no request body or new run is needed):
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs/RUN-XXXX/report
+curl http://127.0.0.1:8000/runs/RUN-XXXX
+```
+
+The POST returns HTTP **202** with `report_status: "PROCESSING"` and
+`report_path: null`. Poll the existing GET endpoint for:
+
+```json
+{
+  "run_id": "RUN-XXXX",
+  "status": "COMPLETED",
+  "report_status": "COMPLETED",
+  "report_path": "/absolute/project/path/reports/RUN-XXXX/market_pulse_business_report.html",
+  "report_error": null,
+  "competitors": []
+}
+```
+
+The actual `competitors` array retains the existing run's competitor details.
+`report_status` is `NOT_GENERATED` before the first request and independent of
+the competitor pipeline's `status`. A failed report has `FAILED`, a safe error
+message in `report_error`, and no report path. Unknown runs return **404**;
+unfinished/missing stage results return **409** before starting any LLM work.
+
+Only the completed report's absolute server filesystem path is returned, not
+HTML or a download URL. Configure the output root with `REPORTS_DIR` (default:
+`reports`). `RUNS_DIR` is respected for all input data and report-job metadata.
+
+Repeated POSTs while a report is building do not schedule duplicate work. A POST
+after completion rebuilds that run's report using the existing exact LLM cache.
+Different runs have separate files; replacing the same run's report is atomic.
+The Python `--run-id` command uses the same service and report status/lock.
+
+Background work runs in the API process, not a durable queue. If the process
+stops during a build, restart it and POST again to retry; it does not resume
+automatically. Local-filesystem locks (POSIX/macOS/Linux) prevent duplicate
+builds across workers and are released when their process exits.
 
 ---
 

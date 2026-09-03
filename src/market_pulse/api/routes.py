@@ -21,7 +21,11 @@ from market_pulse.orchestration.pipeline import (
     generate_run_id,
     process_competitor,
 )
-from market_pulse.schemas.runs import STAGE_NAMES, CompetitorRun, Run, StageResult, utcnow
+from market_pulse.schemas.runs import STAGE_NAMES, CompetitorRun, ReportJob, Run, StageResult, utcnow
+from market_pulse.services.business_report_service import (
+    generate_run_report,
+    reserve_report_generation,
+)
 from market_pulse.storage.file_repository import FileRunRepository
 
 logger = logging.getLogger(__name__)
@@ -235,6 +239,34 @@ def submit_competitor(
     }
 
 
+@router.post(
+    "/runs/{run_id}/report",
+    status_code=202,
+    response_model=ReportJob,
+    responses={
+        404: {"description": "Run not found"},
+        409: {"description": "Omantel or competitor stage results are not ready"},
+    },
+)
+def generate_report(
+    run_id: str,
+    background_tasks: BackgroundTasks,
+    repo: FileRunRepository = Depends(get_repository),
+    settings: Settings = Depends(get_settings),
+) -> ReportJob:
+    """Start a report build; poll GET /runs/{run_id} for its file path."""
+    try:
+        job, lock = reserve_report_generation(run_id, repo)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if lock is not None:
+        background_tasks.add_task(generate_run_report, run_id, repo, settings, job=job, lock=lock)
+    return job.model_copy(deep=True)
+
+
 @router.get("/runs/{run_id}")
 def get_run_status(run_id: str, repo: FileRunRepository = Depends(get_repository)) -> dict:
     run = repo.get_run(run_id)
@@ -243,10 +275,14 @@ def get_run_status(run_id: str, repo: FileRunRepository = Depends(get_repository
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 
     competitor_runs = repo.list_competitor_runs(run_id)
+    report = repo.get_report_job(run_id)
 
     return {
         "run_id": run.run_id,
         "status": run.status,
+        "report_status": report.report_status,
+        "report_path": report.report_path,
+        "report_error": report.report_error,
         "competitors": [
             {
                 "competitor_run_id": cr.competitor_run_id,
@@ -318,6 +354,7 @@ def get_stage_result(
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 
     cr = repo.get_competitor_run(run_id, competitor_run_id)
+
 
     if cr is None:
         raise HTTPException(

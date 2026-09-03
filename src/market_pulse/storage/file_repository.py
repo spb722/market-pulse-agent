@@ -15,6 +15,8 @@ Directory layout (root configurable via ``Settings.runs_dir``, default
         omantel/
           stage_result.json          # the shared omantel_normalization StageResult
         portfolio_analysis.json      # run-level executive report analysis
+        report.json                  # separate report-job status and final path
+        report.lock                  # local-filesystem build lock
         competitors/
           <competitor_run_id>/
             competitor_run.json
@@ -39,13 +41,14 @@ backend, so an interface would just be unused ceremony.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, BinaryIO, Optional
 
-from market_pulse.schemas.runs import CompetitorRun, Run, StageResult
+from market_pulse.schemas.runs import CompetitorRun, ReportJob, Run, StageResult
 
 
 class FileRunRepository:
@@ -199,3 +202,28 @@ class FileRunRepository:
 
     def save_portfolio_analysis(self, run_id: str, payload: dict[str, Any]) -> None:
         self._write_json(self._portfolio_analysis_file(run_id), payload)
+
+    def get_report_job(self, run_id: str) -> ReportJob:
+        data = self._read_json(self._run_dir(run_id) / "report.json")
+        return ReportJob.model_validate(data) if data else ReportJob(run_id=run_id)
+
+    def save_report_job(self, job: ReportJob) -> None:
+        self._write_json(self._run_dir(job.run_id) / "report.json", job.model_dump(mode="json"))
+
+    def acquire_report_lock(self, run_id: str) -> BinaryIO | None:
+        """Nonblocking local-filesystem lock; also works across API workers.
+
+        The caller must verify the run exists, and close the returned handle
+        after the job finishes. POSIX releases the lock if its process exits,
+        so an interrupted job can be retried without deleting any lock files.
+        """
+        handle = (self._run_dir(run_id) / "report.lock").open("ab")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            return None
+        except BaseException:
+            handle.close()
+            raise
+        return handle

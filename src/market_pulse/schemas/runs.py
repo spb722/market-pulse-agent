@@ -64,6 +64,17 @@ class CompetitorRun(BaseModel):
     error: Optional[str] = None
 
 
+class ReportJob(BaseModel):
+    """Report generation status, separate from competitor processing status."""
+
+    run_id: str
+    report_status: Literal["NOT_GENERATED", "PROCESSING", "COMPLETED", "FAILED"] = "NOT_GENERATED"
+    report_path: Optional[str] = None
+    report_error: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
 class StageResult(BaseModel):
     """The result of a single pipeline stage for a run (or competitor run).
 
