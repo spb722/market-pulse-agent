@@ -9,7 +9,20 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 
 from market_pulse.config.settings import Settings
 from market_pulse.llm import langfuse_metrics
-from market_pulse.llm.langfuse_metrics import TokenUsageCollector, record_llm_metrics
+from market_pulse.llm.langfuse_metrics import (
+    TokenUsageCollector,
+    llm_workflow_span,
+    record_llm_metrics,
+    update_workflow_span,
+)
+
+
+class FakeSpan:
+    def __init__(self) -> None:
+        self.updates: list[dict] = []
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
 
 
 class FakeLangfuse:
@@ -19,7 +32,7 @@ class FakeLangfuse:
     @contextmanager
     def start_as_current_observation(self, **kwargs):
         self.observations.append(kwargs)
-        yield
+        yield FakeSpan()
 
     def get_trace_url(self):
         return "https://langfuse.test/trace/1"
@@ -113,3 +126,41 @@ def test_record_includes_structured_io_when_enabled(monkeypatch):
             "output": {"selected_plan_id": "o1"},
         }
     ]
+
+
+def test_workflow_span_captures_summary_io_when_enabled(monkeypatch):
+    client = FakeLangfuse()
+    monkeypatch.setattr(langfuse_metrics, "_get_client", lambda settings: client)
+    settings = Settings(
+        _env_file=None,
+        langfuse_enabled=True,
+        langfuse_capture_io=True,
+        langfuse_public_key="public",
+        langfuse_secret_key="secret",
+    )
+
+    with llm_workflow_span(
+        name="portfolio_analysis",
+        settings=settings,
+        input_payload={"segments": ["postpaid:DATA"]},
+        metadata={"run_id": "RUN-1"},
+    ) as span:
+        update_workflow_span(span, {"recommendations": 2}, settings=settings)
+
+    assert client.observations == [
+        {
+            "as_type": "span",
+            "name": "portfolio_analysis",
+            "metadata": {"run_id": "RUN-1"},
+            "input": {"segments": ["postpaid:DATA"]},
+        }
+    ]
+    assert span.updates == [{"output": {"recommendations": 2}}]
+
+
+def test_workflow_span_is_disabled_without_langfuse(monkeypatch):
+    monkeypatch.setattr(langfuse_metrics, "_get_client", lambda settings: None)
+    settings = Settings(_env_file=None, langfuse_enabled=False)
+
+    with llm_workflow_span(name="portfolio_analysis", settings=settings) as span:
+        assert span is None

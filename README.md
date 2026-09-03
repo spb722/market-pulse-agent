@@ -111,15 +111,23 @@ actually means, and the current known limitations — see **[`docs/usage_guide.m
 ## Generating the business review report
 
 A self-contained, interactive HTML report (KPIs, cross-competitor risk comparison,
-portfolio breakdowns, a sortable/filterable prioritized action table, CSV export) can
-be generated from any completed run:
+an executive Omantel-vs-market decision table, portfolio breakdowns, a
+sortable/filterable plan table, and CSV export) can be generated from a parent run.
+Every completed competitor under that run is discovered automatically:
 
 ```bash
-./.venv/bin/python scripts/generate_business_report.py
+./.venv/bin/python scripts/generate_business_report.py --run-id RUN-XXXX
 ```
 
+During report generation, records with positive calculated risk are grouped by
+category and product type. One cached LLM request per risky group returns concise
+decisions and suggested actions for all affected Omantel plans in that group;
+similarity, gaps, exposure, priority, risk, and the rationale remain deterministic.
+The resulting run-level analysis is also saved to
+`runs/RUN-XXXX/portfolio_analysis.json`.
+
 Open `reports/market_pulse_business_report.html` directly in a browser — no server
-required.
+required and no LLM calls are made by the browser.
 
 ---
 

@@ -14,6 +14,7 @@ Directory layout (root configurable via ``Settings.runs_dir``, default
         run.json
         omantel/
           stage_result.json          # the shared omantel_normalization StageResult
+        portfolio_analysis.json      # run-level executive report analysis
         competitors/
           <competitor_run_id>/
             competitor_run.json
@@ -42,7 +43,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from market_pulse.schemas.runs import CompetitorRun, Run, StageResult
 
@@ -65,6 +66,9 @@ class FileRunRepository:
 
     def _omantel_stage_file(self, run_id: str) -> Path:
         return self._run_dir(run_id) / "omantel" / "stage_result.json"
+
+    def _portfolio_analysis_file(self, run_id: str) -> Path:
+        return self._run_dir(run_id) / "portfolio_analysis.json"
 
     def _competitor_dir(self, run_id: str, competitor_run_id: str) -> Path:
         return self._run_dir(run_id) / "competitors" / competitor_run_id
@@ -185,3 +189,13 @@ class FileRunRepository:
 
     def save_omantel_stage_result(self, sr: StageResult) -> None:
         self._write_json(self._omantel_stage_file(sr.run_id), sr.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------
+    # Run-level report analysis
+    # ------------------------------------------------------------------
+
+    def get_portfolio_analysis(self, run_id: str) -> Optional[dict[str, Any]]:
+        return self._read_json(self._portfolio_analysis_file(run_id))
+
+    def save_portfolio_analysis(self, run_id: str, payload: dict[str, Any]) -> None:
+        self._write_json(self._portfolio_analysis_file(run_id), payload)

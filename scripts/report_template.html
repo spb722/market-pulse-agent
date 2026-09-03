@@ -217,6 +217,27 @@
   .metric-mini-table td { padding: 3px 6px; border-bottom: 1px solid var(--gridline); }
   .empty-state { padding: 30px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
+  /* ---------- executive decision table ---------- */
+  table.executive-table { min-width: 1380px; }
+  table.executive-table th { cursor: default; }
+  table.executive-table th:hover { color: var(--text-secondary); }
+  table.executive-table td { padding: 12px 10px; line-height: 1.45; }
+  .priority-cell { font-size: 19px; font-weight: 700; text-align: center; color: var(--text-secondary); }
+  .segment-label { text-transform: capitalize; white-space: nowrap; }
+  .plan-name { font-weight: 600; color: var(--text-primary); }
+  .comparison-stack { min-width: 190px; }
+  .comparison-item + .comparison-item { border-top: 1px solid var(--gridline); margin-top: 8px; padding-top: 8px; }
+  .comparison-plan { font-weight: 600; margin-bottom: 3px; }
+  .comparison-meta { color: var(--text-secondary); font-size: 11.5px; }
+  .comparison-gap { color: var(--text-muted); font-size: 11.5px; margin-top: 3px; }
+  .risk-stack { min-width: 110px; }
+  .risk-score { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+  .evidence-label { color: var(--text-muted); font-size: 10.5px; margin-top: 5px; }
+  .ai-cell { min-width: 230px; background: color-mix(in srgb, var(--series-1) 4%, transparent); }
+  .ai-label { color: var(--text-muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; }
+  .decision-badge { margin-bottom: 7px; }
+  #portfolio-summary { margin-bottom: 12px; }
+
   footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px; line-height: 1.6; }
 </style>
 </head>
@@ -293,6 +314,20 @@
       </figure>
     </div>
     <p class="section-sub" id="calibration-note" style="margin-top:10px;"></p>
+  </section>
+
+  <!-- ============ EXECUTIVE DECISION VIEW ============ -->
+  <section id="section-executive-decisions">
+    <h2>Where should Omantel act?</h2>
+    <p class="section-sub">One row per affected Omantel plan. Competitor comparisons, similarity, risk and the rationale are calculated facts; the final column is AI-generated decision support.</p>
+    <div class="callout" id="portfolio-summary"></div>
+    <div class="table-scroll">
+      <table class="data-table executive-table" id="executive-table">
+        <thead id="executive-table-head"></thead>
+        <tbody id="executive-table-body"></tbody>
+      </table>
+    </div>
+    <p class="section-sub" style="margin-top:10px;">Priority is ordered by the highest calculated pairwise risk; competitor risks are not added together. Recommendations are options for business review, not forecast outcomes.</p>
   </section>
 
   <!-- ============ PORTFOLIO BREAKDOWN ============ -->
@@ -626,6 +661,88 @@ function renderKpis(filteredRecords) {
 }
 
 // ---------------------------------------------------------------------------
+// Executive decision view — facts plus batched AI recommendations
+// ---------------------------------------------------------------------------
+function renderExecutiveDecisions() {
+  const analysis = DATA.portfolio_analysis || { rows: [], groups: [] };
+  const head = document.getElementById('executive-table-head');
+  const body = document.getElementById('executive-table-body');
+  const summary = document.getElementById('portfolio-summary');
+  head.innerHTML = '';
+  body.innerHTML = '';
+
+  summary.textContent = `${analysis.affected_omantel_plans || 0} Omantel plans have positive calculated risk across ${analysis.risky_segments || 0} product segments, based on ${analysis.positive_risk_comparisons || 0} competitor comparisons.`;
+
+  const headers = ['Priority', 'Segment', 'Omantel pack', ...DATA.competitors.map((c) => c.name), 'Market risk', 'Why it matters', 'Suggested action'];
+  head.appendChild(el('tr', {}, headers.map((header) => el('th', {}, [text(header)]))));
+
+  if (!analysis.rows || analysis.rows.length === 0) {
+    body.appendChild(el('tr', {}, [
+      el('td', { colspan: String(headers.length), class: 'empty-state' }, [text('No scored comparisons exceed the configured risk threshold.')]),
+    ]));
+    return;
+  }
+
+  analysis.rows.forEach((row) => {
+    const cells = [
+      el('td', { class: 'priority-cell' }, [text(row.priority)]),
+      el('td', { class: 'segment-label' }, [
+        el('div', { class: 'plan-name' }, [text(row.category)]),
+        el('div', { class: 'comparison-meta' }, [text(row.product_type)]),
+      ]),
+      el('td', {}, [
+        el('div', { class: 'plan-name' }, [text(row.omantel_plan)]),
+        el('div', { class: 'comparison-meta' }, [text((row.main_gaps || []).length ? `Main gaps: ${row.main_gaps.join(', ')}` : 'No named metric gap')]),
+      ]),
+    ];
+
+    DATA.competitors.forEach((competitor) => {
+      const stack = el('div', { class: 'comparison-stack' }, []);
+      const comparisons = (row.comparisons || []).filter((item) => item.competitor === competitor.name);
+      if (comparisons.length === 0) {
+        stack.appendChild(el('div', { class: 'comparison-meta' }, [text('No affected comparison')]));
+      } else {
+        comparisons.forEach((item) => {
+          const issue = item.primary_attention_area && item.primary_attention_area !== 'BALANCED'
+            ? `Main issue: ${item.primary_attention_area}`
+            : 'No primary issue';
+          stack.appendChild(el('div', { class: 'comparison-item' }, [
+            el('div', { class: 'comparison-plan' }, [text(item.competitor_plan || 'Unnamed plan')]),
+            el('div', { class: 'comparison-meta' }, [text(`${fmtNum((item.similarity_score || 0) * 100, 1)}% similar · Risk ${fmtNum(item.risk_score, 2)}`)]),
+            el('div', { class: 'comparison-gap' }, [text(issue)]),
+          ]));
+        });
+      }
+      cells.push(el('td', {}, [stack]));
+    });
+
+    const riskKey = RISK_STATUS_KEY[row.headline_risk_level] || 'neutral';
+    cells.push(el('td', { class: 'risk-stack' }, [
+      el('div', { class: 'risk-score' }, [text(fmtNum(row.headline_risk_score, 2))]),
+      el('span', { class: `badge ${riskKey}` }, [text(row.headline_risk_level || 'NOT SCORED')]),
+      el('div', { class: 'evidence-label' }, [text(`Evidence: ${row.evidence_confidence || 'LOW'}`)]),
+    ]));
+
+    const sourceLabel = row.analysis_source === 'LLM_GENERATED' ? 'AI synthesis' : 'Deterministic fallback';
+    cells.push(el('td', {}, [
+      el('div', { class: 'ai-label' }, [text('Calculated rationale')]),
+      text(row.why_it_matters || '—'),
+    ]));
+
+    const decisionKey = row.decision === 'KEEP' ? 'good' : (row.decision === 'MONITOR' ? 'neutral' : 'warning');
+    cells.push(el('td', { class: 'ai-cell' }, [
+      el('div', { class: 'ai-label' }, [text(sourceLabel === 'AI synthesis' ? 'AI suggestion' : sourceLabel)]),
+      el('div', { class: 'decision-badge' }, [
+        el('span', { class: `badge ${decisionKey}` }, [text(row.decision || 'INVESTIGATE')]),
+      ]),
+      text(row.suggested_action || '—'),
+    ]));
+
+    body.appendChild(el('tr', {}, cells));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Competitor comparison section (always all competitors, unaffected by filters)
 // ---------------------------------------------------------------------------
 function renderComparison() {
@@ -889,9 +1006,10 @@ document.getElementById('header-meta').innerHTML =
 document.getElementById('footer').innerHTML =
   `Risk-scoring thresholds and metric weights are configurable in <code>config/risk_scoring.yaml</code> — see the calibration note above if risk levels look compressed toward Low. ` +
   `Narrative text is LLM-generated from the calculated facts (never used to recompute scores) or a deterministic fallback when the LLM is unavailable — see the "narrative_source" field in the exported CSV. ` +
-  `Regenerate this report after new runs with <code>python scripts/generate_business_report.py</code>.`;
+  `Regenerate this report after new runs with <code>python scripts/generate_business_report.py --run-id RUN-XXXX</code>.`;
 
 renderComparison();
+renderExecutiveDecisions();
 renderBreakdowns();
 renderMatching();
 rerender();

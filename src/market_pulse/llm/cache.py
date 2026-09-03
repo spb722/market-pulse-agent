@@ -38,12 +38,14 @@ COMPETITOR_CLASSIFICATION = "competitor_classification"
 OMANTEL_ENRICHMENT = "omantel_enrichment"
 PLAN_MATCHING = "plan_matching"
 NARRATIVE_GENERATION = "narrative_generation"
+PORTFOLIO_ANALYSIS = "portfolio_analysis"
 
 _TTL_SETTING_BY_STAGE = {
     COMPETITOR_CLASSIFICATION: "llm_cache_competitor_ttl_seconds",
     OMANTEL_ENRICHMENT: "llm_cache_omantel_ttl_seconds",
     PLAN_MATCHING: "llm_cache_matching_ttl_seconds",
     NARRATIVE_GENERATION: "llm_cache_narrative_ttl_seconds",
+    PORTFOLIO_ANALYSIS: "llm_cache_portfolio_ttl_seconds",
 }
 
 

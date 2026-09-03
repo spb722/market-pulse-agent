@@ -142,5 +142,5 @@ risk_analysis:
   # distribution of risk_score across your actual runs and set these to
   # values that actually separate your real data into meaningful buckets.
   risk_level_thresholds:
-    medium: 30   # risk_score at or above this -> MEDIUM
-    high: 60     # risk_score at or above this -> HIGH
+    medium: 5   # risk_score at or above this -> MEDIUM
+    high: 10     # risk_score at or above this -> HIGH

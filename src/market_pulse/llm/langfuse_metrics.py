@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import contextmanager
 from functools import lru_cache
-from typing import Any
+from typing import Any, Iterator
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage
@@ -144,6 +145,60 @@ def _serialize_payload(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_serialize_payload(item) for item in value]
     return value
+
+
+@contextmanager
+def llm_workflow_span(
+    *,
+    name: str,
+    settings: Settings,
+    input_payload: Any = None,
+    metadata: dict[str, Any] | None = None,
+) -> Iterator[Any]:
+    """Create an optional parent span for a multi-generation LLM workflow."""
+
+    client = _get_client(settings)
+    if client is None:
+        yield None
+        return
+
+    observation: dict[str, Any] = {"as_type": "span", "name": name}
+    if metadata:
+        observation["metadata"] = _serialize_payload(metadata)
+    if settings.langfuse_capture_io:
+        observation["input"] = _serialize_payload(input_payload)
+    try:
+        context = client.start_as_current_observation(**observation)
+        span = context.__enter__()
+    except Exception as exc:  # noqa: BLE001 - observability must fail open
+        logger.warning("Could not start Langfuse workflow span; continuing: %s", exc)
+        yield None
+        return
+
+    try:
+        yield span
+    except BaseException as body_exc:
+        try:
+            context.__exit__(type(body_exc), body_exc, body_exc.__traceback__)
+        except Exception as exc:  # noqa: BLE001 - observability must fail open
+            logger.warning("Could not close Langfuse workflow span; continuing: %s", exc)
+        raise
+    else:
+        try:
+            context.__exit__(None, None, None)
+        except Exception as exc:  # noqa: BLE001 - observability must fail open
+            logger.warning("Could not close Langfuse workflow span; continuing: %s", exc)
+
+
+def update_workflow_span(span: Any, output_payload: Any, *, settings: Settings) -> None:
+    """Best-effort output update for a workflow span."""
+
+    if span is None or not settings.langfuse_capture_io:
+        return
+    try:
+        span.update(output=_serialize_payload(output_payload))
+    except Exception as exc:  # noqa: BLE001 - observability must fail open
+        logger.warning("Could not update Langfuse workflow span; continuing: %s", exc)
 
 
 def flush_langfuse(settings: Settings) -> None:

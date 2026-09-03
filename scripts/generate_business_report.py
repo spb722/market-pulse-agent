@@ -9,6 +9,7 @@ external dependencies, safe to open directly (``file://``) or host anywhere.
 
 Usage:
     python scripts/generate_business_report.py
+    python scripts/generate_business_report.py --run-id RUN-XXXX
     python scripts/generate_business_report.py --run RUN-XXXX:CR-YYYY:CompetitorName ...
 
 With no arguments, regenerates the report from the two real runs already
@@ -22,7 +23,13 @@ import json
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from market_pulse.config.settings import Settings, get_settings
+from market_pulse.llm.langfuse_metrics import flush_langfuse
+from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
+from market_pulse.services.portfolio_analysis_service import build_portfolio_analysis
+from market_pulse.storage.file_repository import FileRunRepository
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = REPO_ROOT / "runs"
@@ -107,6 +114,36 @@ def _count_by(items: list[dict], key: str) -> dict[str, int]:
     return counts
 
 
+def discover_run_specs(run_id: str) -> list[tuple[str, str, str]]:
+    """Discover every completed competitor under one parent run."""
+
+    competitors_dir = RUNS_DIR / run_id / "competitors"
+    if not competitors_dir.is_dir():
+        raise ValueError(f"Run {run_id!r} has no competitors directory.")
+
+    specs: list[tuple[str, str, str]] = []
+    unfinished: list[str] = []
+    for metadata_path in sorted(competitors_dir.glob("*/competitor_run.json")):
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        competitor_run_id = str(metadata.get("competitor_run_id") or metadata_path.parent.name)
+        status = metadata.get("status")
+        if status != "COMPLETED":
+            unfinished.append(f"{competitor_run_id} ({status or 'UNKNOWN'})")
+            continue
+        competitor = str(metadata.get("competitor") or competitor_run_id)
+        specs.append((run_id, competitor_run_id, competitor.title()))
+
+    if unfinished:
+        raise ValueError(
+            f"Run {run_id!r} is not ready for reporting; unfinished competitor runs: "
+            + ", ".join(unfinished)
+        )
+    if not specs:
+        raise ValueError(f"Run {run_id!r} has no completed competitors.")
+    specs.sort(key=lambda spec: (spec[2].lower(), spec[1]))
+    return specs
+
+
 def _map_record(raw: dict[str, Any], competitor: str) -> dict[str, Any]:
     record = {"competitor": competitor}
     for src_key, dst_key in RECORD_FIELD_MAP.items():
@@ -182,25 +219,16 @@ def build_competitor_dataset(run_id: str, competitor_run_id: str, name: str) -> 
     return summary, records, no_match
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--run",
-        action="append",
-        dest="runs",
-        metavar="RUN_ID:COMPETITOR_RUN_ID:NAME",
-        help="A completed competitor run to include. Repeatable. Defaults to the two real runs already in this repo.",
-    )
-    args = parser.parse_args()
+def build_report_dataset(
+    run_specs: list[tuple[str, str, str]],
+    *,
+    analysis_run_id: str,
+    advisor: Callable[[dict[str, Any]], PortfolioSegmentAdvice] | None = None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Assemble deterministic report data and run-level executive advice."""
 
-    if args.runs:
-        run_specs = []
-        for spec in args.runs:
-            run_id, competitor_run_id, name = spec.split(":", 2)
-            run_specs.append((run_id, competitor_run_id, name))
-    else:
-        run_specs = DEFAULT_RUNS
-
+    settings = settings or get_settings()
     competitors = []
     all_records: list[dict] = []
     all_no_match: list[dict] = []
@@ -214,23 +242,98 @@ def main() -> None:
         count = _omantel_count(run_id)
         omantel_products = count if omantel_products is None else max(omantel_products, count)
 
-    dataset = {
+    portfolio_kwargs: dict[str, Any] = {}
+    if advisor is not None:
+        portfolio_kwargs["advisor"] = advisor
+    portfolio_analysis = build_portfolio_analysis(
+        all_records,
+        run_id=analysis_run_id,
+        minimum_risk=settings.portfolio_analysis_minimum_risk,
+        settings=settings,
+        **portfolio_kwargs,
+    )
+
+    return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": analysis_run_id,
         "omantel_atl_products": omantel_products,
         "competitors": competitors,
+        "portfolio_analysis": portfolio_analysis,
         "records": all_records,
         "no_match": all_no_match,
     }
 
-    template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    output = template.replace(
-        "/*__MARKET_PULSE_DATA__*/null", json.dumps(dataset, ensure_ascii=False)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--run-id",
+        help="Discover and include every completed competitor under this parent run.",
     )
+    source.add_argument(
+        "--run",
+        action="append",
+        dest="runs",
+        metavar="RUN_ID:COMPETITOR_RUN_ID:NAME",
+        help="A completed competitor run to include. Repeatable. Defaults to the two real runs already in this repo.",
+    )
+    args = parser.parse_args()
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(output, encoding="utf-8")
+    if args.run_id:
+        run_specs = discover_run_specs(args.run_id)
+        analysis_run_id = args.run_id
+    elif args.runs:
+        run_specs = []
+        for spec in args.runs:
+            run_id, competitor_run_id, name = spec.split(":", 2)
+            run_specs.append((run_id, competitor_run_id, name))
+        distinct_run_ids = sorted({spec[0] for spec in run_specs})
+        analysis_run_id = (
+            distinct_run_ids[0]
+            if len(distinct_run_ids) == 1
+            else "MULTI-RUN:" + ",".join(distinct_run_ids)
+        )
+    else:
+        run_specs = DEFAULT_RUNS
+        analysis_run_id = "MULTI-RUN:" + ",".join(sorted({spec[0] for spec in run_specs}))
 
-    print(f"Wrote {OUTPUT_PATH} ({len(all_records)} records, {len(all_no_match)} no-match, {len(competitors)} competitors)")
+    settings = get_settings()
+    try:
+        dataset = build_report_dataset(
+            run_specs,
+            analysis_run_id=analysis_run_id,
+            settings=settings,
+        )
+
+        if args.run_id:
+            FileRunRepository(RUNS_DIR).save_portfolio_analysis(
+                args.run_id,
+                {
+                    "run_id": args.run_id,
+                    "generated_at": dataset["generated_at"],
+                    "competitor_run_ids": [spec[1] for spec in run_specs],
+                    "result": dataset["portfolio_analysis"],
+                },
+            )
+
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        output = template.replace(
+            "/*__MARKET_PULSE_DATA__*/null", json.dumps(dataset, ensure_ascii=False)
+        )
+
+        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        OUTPUT_PATH.write_text(output, encoding="utf-8")
+    finally:
+        flush_langfuse(settings)
+
+    portfolio = dataset["portfolio_analysis"]
+    print(
+        f"Wrote {OUTPUT_PATH} ({len(dataset['records'])} records, "
+        f"{len(dataset['no_match'])} no-match, {len(dataset['competitors'])} competitors, "
+        f"{portfolio['affected_omantel_plans']} executive decisions across "
+        f"{portfolio['risky_segments']} risky segments)"
+    )
 
 
 if __name__ == "__main__":

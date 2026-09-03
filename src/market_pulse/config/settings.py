@@ -81,8 +81,13 @@ class Settings(BaseSettings):
     llm_cache_omantel_ttl_seconds: int = Field(default=31_536_000, gt=0)
     llm_cache_matching_ttl_seconds: int = Field(default=15_552_000, gt=0)
     llm_cache_narrative_ttl_seconds: int = Field(default=7_776_000, gt=0)
+    llm_cache_portfolio_ttl_seconds: int = Field(default=7_776_000, gt=0)
     llm_cache_ttl_jitter_percent: int = Field(default=10, ge=0, le=50)
     llm_cache_socket_timeout_seconds: float = Field(default=2.0, gt=0)
+
+    # Report-level executive analysis. A group is sent to the LLM only when
+    # at least one scored comparison has a risk strictly above this value.
+    portfolio_analysis_minimum_risk: float = Field(default=0.0, ge=0)
 
     # --- Run-oriented orchestration/storage (see docs/architecture.md) -----
     # Root directory for the file-based run/competitor-run/stage-result
