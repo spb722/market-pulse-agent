@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
 from market_pulse.config.settings import Settings, get_settings
-from market_pulse.llm.langfuse_metrics import flush_langfuse
+from market_pulse.llm.langfuse_metrics import flush_langfuse, llm_trace
 from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
 from market_pulse.schemas.runs import STAGE_NAMES, ReportJob, utcnow
 from market_pulse.services.portfolio_analysis_service import build_portfolio_analysis
@@ -272,10 +272,11 @@ def write_business_report(
 ) -> dict[str, Any]:
     """Render saved results atomically, sharing the existing LLM/cache path."""
     try:
-        dataset = build_report_dataset(
-            run_specs, analysis_run_id=analysis_run_id, repo=repo,
-            settings=settings, advisor=advisor,
-        )
+        with llm_trace(name="run_report", settings=settings, run_id=analysis_run_id):
+            dataset = build_report_dataset(
+                run_specs, analysis_run_id=analysis_run_id, repo=repo,
+                settings=settings, advisor=advisor,
+            )
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
         marker = "/*__MARKET_PULSE_DATA__*/null"
         if marker not in template:
