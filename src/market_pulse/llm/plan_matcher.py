@@ -34,6 +34,7 @@ from market_pulse.llm.cache import (
     PLAN_MATCHING,
     invoke_structured_cached,
 )
+from market_pulse.llm.structured_output import structured_output_chain
 from market_pulse.schemas.matching import MatchDecision
 
 logger = logging.getLogger(__name__)
@@ -134,9 +135,7 @@ def get_match_chain(llm: Optional[ChatOpenAI] = None) -> MatchChain:
 
     llm = llm or get_llm_client()
 
-    structured_llm = llm.with_structured_output(MatchDecision, method="json_schema")
-
-    return match_prompt | structured_llm
+    return structured_output_chain(match_prompt, llm, MatchDecision, "plan match decision", log=logger)
 
 
 def decide_match(

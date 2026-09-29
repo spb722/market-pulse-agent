@@ -44,6 +44,7 @@ from market_pulse.llm.cache import (
     invoke_structured_batch_cached,
     invoke_structured_cached,
 )
+from market_pulse.llm.structured_output import structured_output_chain
 from market_pulse.schemas.omantel import OmantelSemanticEnrichment
 
 logger = logging.getLogger(__name__)
@@ -139,11 +140,9 @@ def get_semantic_chain(llm: Optional[ChatOpenAI] = None) -> SemanticChain:
 
     llm = llm or get_llm_client()
 
-    structured_llm = llm.with_structured_output(
-        OmantelSemanticEnrichment, method="json_schema"
+    return structured_output_chain(
+        semantic_prompt, llm, OmantelSemanticEnrichment, "Omantel semantic enrichment", log=logger
     )
-
-    return semantic_prompt | structured_llm
 
 
 def enrich_omantel_plan(
