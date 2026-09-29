@@ -48,7 +48,7 @@ class ClassificationChain(Protocol):
     def invoke(self, input: dict[str, str], config: Any = None) -> AIMessage | PlanEnrichment: ...
 
 
-_CACHE_PROMPT_VERSION = "competitor-classification-v1"
+_CACHE_PROMPT_VERSION = "competitor-classification-v2"
 
 
 classification_prompt = ChatPromptTemplate.from_messages(
@@ -81,6 +81,26 @@ IMPORTANT RULES:
 Do not perform competitor gap analysis.
 Do not calculate risk.
 Do not recommend Omantel actions.
+
+OUTPUT FORMAT:
+
+Return exactly one JSON object with these eight fields at the top level:
+
+- plan_role: MASTER, BASE_PLAN, ADDON, or UNKNOWN
+- product_type: COMBO, DATA, VOICE, IDD, ROAMING, SMS, or OTHER
+- market_segment: CONSUMER, BUSINESS, or UNKNOWN
+- primary_value_driver: DATA, VOICE, IDD, ROAMING, SOCIAL,
+  ENTERTAINMENT, BALANCED, or OTHER
+- promo_status: STANDARD, PROMO, or UNKNOWN
+- benefit_tags: a list of short strings
+- classification_confidence: a number from 0 to 1
+- rationale: one short sentence
+
+Use these exact field names. Do not nest them inside "classification"
+or "enrichment". Do not repeat the input plan, and do not add fields
+such as plan_id, plan_name, or operator.
+
+Return the JSON object only, with no Markdown fence or other text.
 """,
         ),
         (

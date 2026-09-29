@@ -98,6 +98,10 @@ def test_openai_compatible_client_returns_raw_message_before_parsing():
 
     def respond(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        system_prompt = payload["messages"][0]["content"]
+        assert "Return exactly one JSON object with these eight fields at the top level" in system_prompt
+        assert all(field in system_prompt for field in PlanEnrichment.model_fields)
+        assert 'Do not nest them inside "classification"' in system_prompt
         response_format = payload["response_format"]
         assert response_format["type"] == "json_schema"
         assert response_format["json_schema"]["strict"] is True
