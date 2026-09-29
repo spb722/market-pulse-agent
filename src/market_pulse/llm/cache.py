@@ -303,6 +303,7 @@ def invoke_structured_batch_cached(
             settings=cache.settings,
             input_payload=list(requests),
             output_payload=results,
+            requests=len(requests),
         )
         return results
 
@@ -347,6 +348,7 @@ def invoke_structured_batch_cached(
         settings=cache.settings,
         input_payload=list(requests),
         output_payload=[result for result in results if result is not None],
+        requests=len(requests),
     )
     return [result for result in results if result is not None]
 

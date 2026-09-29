@@ -64,6 +64,24 @@ input tokens, output tokens, Redis response-cache hits (`cached`), and total
 cost. Set `LANGFUSE_CAPTURE_IO=true` to additionally send the logical request
 and structured response for both live calls and Redis cache hits; leave it
 disabled when business payloads must not leave the application.
+
+Each observation's metadata also carries `llm_calls` (provider calls actually
+made, including failed ones), `cache_hits` and `requests` (logical requests;
+a batch covers several). Every competitor run is one Langfuse trace named
+`competitor_run`; the run's one-time Omantel preparation (`omantel_reference`)
+and report generation (`run_report`) are their own traces. All traces of a run
+share the Langfuse session `run_id`, and carry `run_id`, `competitor_run_id`
+and `competitor` as trace metadata and `run:` / `competitor_run:` /
+`competitor:` tags. Each trace's root span records that trace's totals.
+
+- Whole run: open **Sessions → `RUN-…`** for tokens, cost and traces.
+- One competitor: filter traces by tag `competitor_run:CR-…`.
+- LLM-call counts per competitor and for the run:
+
+  ```bash
+  ./.venv/bin/python scripts/langfuse_run_usage.py RUN-1001        # table
+  ./.venv/bin/python scripts/langfuse_run_usage.py RUN-1001 --json
+  ```
 The example configuration estimates cost using Claude Haiku 4.5 standard API
 pricing ($1/M input tokens and $5/M output tokens). These rates affect reporting
 only and can be changed independently of the configured inference model.

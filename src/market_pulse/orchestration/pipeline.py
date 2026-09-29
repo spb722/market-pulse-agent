@@ -40,7 +40,7 @@ from uuid import uuid4
 
 from market_pulse.config.settings import Settings
 from market_pulse.llm.cache import get_llm_cache_stats
-from market_pulse.llm.langfuse_metrics import flush_langfuse
+from market_pulse.llm.langfuse_metrics import LLMUsageTotals, flush_langfuse, llm_trace
 from market_pulse.schemas.runs import STAGE_NAMES, CompetitorRun, Run, StageResult, utcnow
 from market_pulse.services.competitor_normalization_service import (
     RawPayload,
@@ -144,11 +144,16 @@ def ensure_omantel_reference(
         )
 
         try:
-            prepaid_df, postpaid_df = load_omantel_catalogues_from_csv(
-                settings.omantel_prepaid_csv_path, settings.omantel_postpaid_csv_path
-            )
+            # Its own Langfuse trace: this work belongs to the run, not to
+            # whichever competitor happened to trigger it.
+            with llm_trace(
+                name="omantel_reference", settings=settings, run_id=run_id
+            ) as llm_usage:
+                prepaid_df, postpaid_df = load_omantel_catalogues_from_csv(
+                    settings.omantel_prepaid_csv_path, settings.omantel_postpaid_csv_path
+                )
 
-            enriched_plans, errors = run_omantel_normalization(prepaid_df, postpaid_df)
+                enriched_plans, errors = run_omantel_normalization(prepaid_df, postpaid_df)
 
         except Exception as exc:  # noqa: BLE001 - a broken Omantel reference must block this run
             logger.error(
@@ -202,6 +207,7 @@ def ensure_omantel_reference(
             len(enriched_plans),
             len(errors),
         )
+        _log_llm_usage(settings, llm_usage, _ctx(run_id, stage="omantel_normalization"))
 
         return enriched_plans, errors
 
@@ -284,6 +290,12 @@ def _save_stage(
     )
 
 
+def _log_llm_usage(settings: Settings, llm_usage: LLMUsageTotals, context: str) -> None:
+    # Token counts are only collected while Langfuse is enabled.
+    if settings.langfuse_enabled:
+        logger.info("%s | LLM usage: %s", context, llm_usage.as_dict())
+
+
 def process_competitor(
     run_id: str,
     competitor_run_id: str,
@@ -300,7 +312,36 @@ def process_competitor(
     where an uncaught exception would otherwise be silently swallowed, so it
     is caught, logged and recorded on the ``CompetitorRun``/``StageResult``
     instead.
+
+    All of the competitor's LLM generations form one Langfuse trace in the
+    session ``run_id``, tagged with ``competitor_run_id``.
     """
+
+    try:
+        with llm_trace(
+            name="competitor_run",
+            settings=settings,
+            run_id=run_id,
+            competitor_run_id=competitor_run_id,
+            competitor=competitor,
+        ) as llm_usage:
+            _process_competitor(
+                run_id, competitor_run_id, competitor, prepaid_raw, postpaid_raw, repo, settings
+            )
+        _log_llm_usage(settings, llm_usage, _ctx(run_id, competitor_run_id, stage="llm_usage"))
+    finally:
+        flush_langfuse(settings)
+
+
+def _process_competitor(
+    run_id: str,
+    competitor_run_id: str,
+    competitor: str,
+    prepaid_raw: RawPayload,
+    postpaid_raw: RawPayload,
+    repo: FileRunRepository,
+    settings: Settings,
+) -> None:
 
     cache_stats_before = get_llm_cache_stats()
     cr = repo.get_competitor_run(run_id, competitor_run_id)
@@ -512,5 +553,4 @@ def process_competitor(
             _ctx(run_id, competitor_run_id, stage="llm_cache"),
             cache_delta or {},
         )
-        flush_langfuse(settings)
         _refresh_run_aggregate(run_id, repo)
