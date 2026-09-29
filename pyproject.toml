@@ -31,7 +31,7 @@ dev = [
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "test"]
 pythonpath = ["src"]
 markers = [
     "slow: exercises real LLM calls against a local Ollama instance (slower, network/service dependent).",

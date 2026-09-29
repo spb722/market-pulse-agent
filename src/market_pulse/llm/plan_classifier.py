@@ -4,11 +4,14 @@ This is the only module in the codebase that constructs an LLM client.
 Business/deterministic logic must not live here; it belongs in
 ``market_pulse.services.competitor_normalization_service``.
 
-Preserves, verbatim, the reference implementation's:
+Preserves the reference implementation's:
 - classification prompt (system + human text)
-- structured output schema (``PlanEnrichment``) and invocation method
+- structured output schema (``PlanEnrichment``)
 - per-plan failure isolation semantics (one failing plan must not abort
   the whole batch)
+
+The strict JSON-schema request is retained, while raw responses are logged at
+DEBUG and parsed locally so known text wrappers can be removed deterministically.
 
 The reference implementation used Groq's ``ChatGroq`` client directly.
 Production instead uses ``langchain_openai.ChatOpenAI`` against an
@@ -22,9 +25,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Optional, Protocol
 
+from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
@@ -39,8 +44,10 @@ logger = logging.getLogger(__name__)
 
 Plan = dict[str, Any]
 
-# ClassificationChain.invoke({"plan_json": str}) -> PlanEnrichment
-ClassificationChain = Callable[[dict[str, str]], PlanEnrichment]
+class ClassificationChain(Protocol):
+    def invoke(self, input: dict[str, str], config: Any = None) -> AIMessage | PlanEnrichment: ...
+
+
 _CACHE_PROMPT_VERSION = "competitor-classification-v1"
 
 
@@ -110,15 +117,63 @@ def get_llm_client(settings: Optional[Settings] = None) -> ChatOpenAI:
 
 
 def get_classification_chain(llm: Optional[ChatOpenAI] = None) -> ClassificationChain:
-    """Build the classification chain: prompt | structured-output LLM."""
+    """Request the strict schema but leave parsing until after raw-response logging."""
 
     llm = llm or get_llm_client()
+    function = convert_to_openai_function(PlanEnrichment, strict=True)
+    parameters = function.pop("parameters")
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {**function, "schema": parameters},
+    }
 
-    structured_llm = llm.with_structured_output(
-        PlanEnrichment, method="json_schema", strict=True
-    )
+    # Passing a Pydantic class to with_structured_output makes the OpenAI SDK
+    # validate the response before application code can see malformed text.
+    # A schema dictionary sends the same JSON-schema request and returns the
+    # raw AIMessage for deterministic extraction and Pydantic validation below.
+    return classification_prompt | llm.bind(response_format=response_format)
 
-    return classification_prompt | structured_llm
+
+def extract_json_object(content: str) -> dict[str, Any]:
+    """Extract one complete JSON object from text or a Markdown code fence.
+
+    Text before/after the object is allowed. Extra JSON objects, incomplete
+    objects, and braces outside the selected object are rejected as ambiguous.
+    """
+
+    decoder = json.JSONDecoder()
+    text = content.strip()
+    matches: list[dict[str, Any]] = []
+
+    for index, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            continue
+        outside = text[:index] + text[end:]
+        if isinstance(value, dict) and not any(char in outside for char in "{}[]"):
+            matches.append(value)
+
+    if len(matches) != 1:
+        raise ValueError("Expected exactly one complete JSON object in LLM response")
+    return matches[0]
+
+
+def _validate_classification_response(
+    response: AIMessage | PlanEnrichment, plan_name: str | None
+) -> PlanEnrichment:
+    if isinstance(response, PlanEnrichment):
+        # Allows injected structured chains in tests and other callers.
+        return response
+    if not isinstance(response, AIMessage):
+        raise TypeError(f"Expected AIMessage from classifier, got {type(response).__name__}")
+
+    logger.debug("Raw plan classification response for %r:\n%s", plan_name, response.content)
+    if not isinstance(response.content, str):
+        raise TypeError("Expected text content in plan classification response")
+    return PlanEnrichment.model_validate(extract_json_object(response.content))
 
 
 def enrich_one_plan(
@@ -133,16 +188,22 @@ def enrich_one_plan(
     """
 
     request = {"plan_json": json.dumps(plan, ensure_ascii=False)}
+    classification_chain = chain or get_classification_chain()
+
+    def invoke(config: Any = None) -> PlanEnrichment:
+        response = (
+            classification_chain.invoke(request, config=config)
+            if config is not None
+            else classification_chain.invoke(request)
+        )
+        return _validate_classification_response(response, plan.get("plan_name"))
+
     llm_result = invoke_structured_cached(
         stage=COMPETITOR_CLASSIFICATION,
         request=request,
         output_model=PlanEnrichment,
         prompt_version=_CACHE_PROMPT_VERSION,
-        invoke=lambda config=None: (
-            (chain or get_classification_chain()).invoke(request, config=config)
-            if config is not None
-            else (chain or get_classification_chain()).invoke(request)
-        ),
+        invoke=invoke,
         cache=cache,
     )
 
