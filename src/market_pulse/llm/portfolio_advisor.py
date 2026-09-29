@@ -20,6 +20,7 @@ from market_pulse.llm.cache import (
     PORTFOLIO_ANALYSIS,
     invoke_structured_cached,
 )
+from market_pulse.llm.structured_output import structured_output_chain
 from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
 
 _CACHE_PROMPT_VERSION = "portfolio-advice-v3"
@@ -95,11 +96,9 @@ def get_portfolio_advice_chain(llm: Optional[ChatOpenAI] = None):
     """Build the prompt and structured-output chain."""
 
     llm = llm or get_llm_client()
-    structured_llm = llm.with_structured_output(
-        PortfolioSegmentAdvice,
-        method="json_schema",
+    return structured_output_chain(
+        portfolio_advice_prompt, llm, PortfolioSegmentAdvice, "portfolio segment advice"
     )
-    return portfolio_advice_prompt | structured_llm
 
 
 def generate_segment_advice(

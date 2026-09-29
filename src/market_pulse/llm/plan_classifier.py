@@ -29,7 +29,6 @@ from typing import Any, Optional, Protocol
 
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_openai import ChatOpenAI
 
 from market_pulse.config.settings import Settings, get_settings
@@ -37,6 +36,11 @@ from market_pulse.llm.cache import (
     COMPETITOR_CLASSIFICATION,
     LLMResponseCache,
     invoke_structured_cached,
+)
+from market_pulse.llm.structured_output import (
+    build_response_format,
+    extract_json_object,
+    validate_structured_response,
 )
 from market_pulse.schemas.competitor import PlanEnrichment
 
@@ -140,12 +144,7 @@ def get_classification_chain(llm: Optional[ChatOpenAI] = None) -> Classification
     """Request the strict schema but leave parsing until after raw-response logging."""
 
     llm = llm or get_llm_client()
-    function = convert_to_openai_function(PlanEnrichment, strict=True)
-    parameters = function.pop("parameters")
-    response_format = {
-        "type": "json_schema",
-        "json_schema": {**function, "schema": parameters},
-    }
+    response_format = build_response_format(PlanEnrichment, strict=True)
 
     # Passing a Pydantic class to with_structured_output makes the OpenAI SDK
     # validate the response before application code can see malformed text.
@@ -154,46 +153,15 @@ def get_classification_chain(llm: Optional[ChatOpenAI] = None) -> Classification
     return classification_prompt | llm.bind(response_format=response_format)
 
 
-def extract_json_object(content: str) -> dict[str, Any]:
-    """Extract one complete JSON object from text or a Markdown code fence.
-
-    Text before/after the object is allowed. Extra JSON objects, incomplete
-    objects, and braces outside the selected object are rejected as ambiguous.
-    """
-
-    decoder = json.JSONDecoder()
-    text = content.strip()
-    matches: list[dict[str, Any]] = []
-
-    for index, character in enumerate(text):
-        if character != "{":
-            continue
-        try:
-            value, end = decoder.raw_decode(text, index)
-        except json.JSONDecodeError:
-            continue
-        outside = text[:index] + text[end:]
-        if isinstance(value, dict) and not any(char in outside for char in "{}[]"):
-            matches.append(value)
-
-    if len(matches) != 1:
-        raise ValueError("Expected exactly one complete JSON object in LLM response")
-    return matches[0]
-
-
 def _validate_classification_response(
     response: AIMessage | PlanEnrichment, plan_name: str | None
 ) -> PlanEnrichment:
-    if isinstance(response, PlanEnrichment):
-        # Allows injected structured chains in tests and other callers.
-        return response
-    if not isinstance(response, AIMessage):
-        raise TypeError(f"Expected AIMessage from classifier, got {type(response).__name__}")
+    return validate_structured_response(
+        response, PlanEnrichment, "plan classification", context=repr(plan_name), log=logger
+    )
 
-    logger.debug("Raw plan classification response for %r:\n%s", plan_name, response.content)
-    if not isinstance(response.content, str):
-        raise TypeError("Expected text content in plan classification response")
-    return PlanEnrichment.model_validate(extract_json_object(response.content))
+
+__all__ = ["extract_json_object"]
 
 
 def enrich_one_plan(

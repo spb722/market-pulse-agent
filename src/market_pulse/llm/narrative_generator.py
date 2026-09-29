@@ -59,6 +59,7 @@ from market_pulse.llm.cache import (
     NARRATIVE_GENERATION,
     invoke_structured_cached,
 )
+from market_pulse.llm.structured_output import structured_output_chain
 from market_pulse.schemas.narrative import GapNarrative
 
 logger = logging.getLogger(__name__)
@@ -250,9 +251,7 @@ def get_report_chain(llm: Optional[ChatOpenAI] = None) -> ReportChain:
 
     llm = llm or get_llm_client()
 
-    structured_llm = llm.with_structured_output(GapNarrative, method="json_schema")
-
-    return report_prompt | structured_llm
+    return structured_output_chain(report_prompt, llm, GapNarrative, "gap narrative", log=logger)
 
 
 # ---------------------------------------------------------------------------
