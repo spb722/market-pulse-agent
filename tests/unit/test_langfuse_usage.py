@@ -11,6 +11,10 @@ def _page(items, total_pages=1):
     return SimpleNamespace(data=items, meta=SimpleNamespace(total_pages=total_pages))
 
 
+def _cursor_page(items, cursor=None):
+    return SimpleNamespace(data=items, meta=SimpleNamespace(cursor=cursor))
+
+
 def _trace(trace_id, name, **metadata):
     return SimpleNamespace(id=trace_id, name=name, metadata=metadata)
 
@@ -19,7 +23,7 @@ def _generation(input_tokens, output_tokens, llm_calls, cache_hits, requests, co
     return SimpleNamespace(
         usage_details={"input": input_tokens, "output": output_tokens, "cached": cache_hits},
         metadata={"llm_calls": llm_calls, "cache_hits": cache_hits, "requests": requests},
-        calculated_total_cost=cost,
+        total_cost=cost,
         cost_details={"total": cost},
     )
 
@@ -29,6 +33,7 @@ class FakeApi:
         self.trace_pages = trace_pages
         self.generations_by_trace = generations_by_trace
         self.trace_queries = []
+        self.observation_queries = []
         self.trace = SimpleNamespace(list=self._list_traces)
         self.observations = SimpleNamespace(get_many=self._get_observations)
 
@@ -36,9 +41,15 @@ class FakeApi:
         self.trace_queries.append(session_id)
         return _page(self.trace_pages[page - 1], total_pages=len(self.trace_pages))
 
-    def _get_observations(self, *, page, limit, trace_id, type):
+    def _get_observations(self, *, limit, fields, trace_id, type, cursor=None):
         assert type == "GENERATION"
-        return _page(self.generations_by_trace.get(trace_id, []))
+        assert fields == "core,basic,metadata,usage"
+        self.observation_queries.append((trace_id, cursor))
+        generations = self.generations_by_trace.get(trace_id, [])
+        pages = generations if generations and isinstance(generations[0], list) else [generations]
+        index = int(cursor) if cursor else 0
+        next_cursor = str(index + 1) if index + 1 < len(pages) else None
+        return _cursor_page(pages[index], next_cursor)
 
 
 def test_summarize_run_usage_per_competitor_and_total():
@@ -100,3 +111,22 @@ def test_summarize_run_usage_empty_session():
 
     assert summary["rows"] == []
     assert summary["total"]["llm_calls"] == 0
+
+
+def test_summarize_run_usage_paginates_generations_by_cursor():
+    api = FakeApi(
+        trace_pages=[[_trace("t1", "competitor_run", competitor_run_id="CR-001")]],
+        generations_by_trace={
+            "t1": [
+                [_generation(100, 10, 1, 0, 1, 0.001)],
+                [_generation(200, 20, 1, 0, 1, 0.002)],
+            ]
+        },
+    )
+
+    summary = summarize_run_usage("RUN-1", SimpleNamespace(api=api))
+
+    assert api.observation_queries == [("t1", None), ("t1", "1")]
+    assert summary["total"]["llm_calls"] == 2
+    assert summary["total"]["input_tokens"] == 300
+    assert summary["total"]["output_tokens"] == 30
