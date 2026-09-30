@@ -43,7 +43,7 @@ Plan = dict[str, Any]
 
 # MatchChain.invoke({"competitor": str, "candidates": str}) -> MatchDecision
 MatchChain = Callable[[dict[str, str]], MatchDecision]
-_CACHE_PROMPT_VERSION = "plan-matching-v1"
+_CACHE_PROMPT_VERSION = "plan-matching-v2"
 
 
 match_prompt = ChatPromptTemplate.from_messages(
@@ -86,6 +86,23 @@ IMPORTANT RULES:
     comparisons, return NO_GOOD_MATCH and
     selected_plan_id = null.
 11. Keep the reason short.
+
+OUTPUT FORMAT:
+
+Return exactly one JSON object with these four fields at the top level:
+
+- selected_plan_id: one omantel_plan_id from the candidates, or null
+- match_status: MATCHED or NO_GOOD_MATCH
+- match_confidence: a number from 0 to 1
+- reason: one short sentence
+
+Example:
+
+{{"selected_plan_id": "USG_0000000", "match_status": "MATCHED", "match_confidence": 0.8, "reason": "Closest on price, data and validity."}}
+
+Use these exact field names and no other fields.
+Return the JSON object only, with no Markdown, headings, bold text,
+code fence or other text.
 """,
         ),
         (

@@ -29,7 +29,7 @@ def _empty_row(name: str, competitor_run_id: str | None, competitor: str | None)
     return row
 
 
-def _paginate(fetch, **kwargs) -> list[Any]:
+def _paginate_traces(fetch, **kwargs) -> list[Any]:
     items: list[Any] = []
     page = 1
     while True:
@@ -40,9 +40,25 @@ def _paginate(fetch, **kwargs) -> list[Any]:
         page += 1
 
 
+def _paginate_generations(fetch, **kwargs) -> list[Any]:
+    items: list[Any] = []
+    cursor: str | None = None
+    while True:
+        response = fetch(
+            limit=_PAGE_SIZE,
+            fields="core,basic,metadata,usage",
+            **({"cursor": cursor} if cursor else {}),
+            **kwargs,
+        )
+        items.extend(response.data)
+        cursor = response.meta.cursor
+        if not cursor:
+            return items
+
+
 def _generation_cost(generation: Any) -> float:
-    if generation.calculated_total_cost is not None:
-        return float(generation.calculated_total_cost)
+    if generation.total_cost is not None:
+        return float(generation.total_cost)
     return float((generation.cost_details or {}).get("total", 0.0))
 
 
@@ -60,14 +76,14 @@ def summarize_run_usage(run_id: str, client: Langfuse) -> dict[str, Any]:
     """
 
     rows: dict[tuple[str, str | None], dict[str, Any]] = {}
-    for trace in _paginate(client.api.trace.list, session_id=run_id):
+    for trace in _paginate_traces(client.api.trace.list, session_id=run_id):
         metadata = trace.metadata or {}
         competitor_run_id = metadata.get("competitor_run_id")
         key = (trace.name or "unnamed", competitor_run_id)
         row = rows.setdefault(key, _empty_row(key[0], competitor_run_id, metadata.get("competitor")))
         row["traces"] += 1
 
-        generations = _paginate(
+        generations = _paginate_generations(
             client.api.observations.get_many, trace_id=trace.id, type="GENERATION"
         )
         for generation in generations:

@@ -52,7 +52,7 @@ class ClassificationChain(Protocol):
     def invoke(self, input: dict[str, str], config: Any = None) -> AIMessage | PlanEnrichment: ...
 
 
-_CACHE_PROMPT_VERSION = "competitor-classification-v2"
+_CACHE_PROMPT_VERSION = "competitor-classification-v3"
 
 
 classification_prompt = ChatPromptTemplate.from_messages(
@@ -93,7 +93,7 @@ Return exactly one JSON object with these eight fields at the top level:
 - plan_role: MASTER, BASE_PLAN, ADDON, or UNKNOWN
 - product_type: COMBO, DATA, VOICE, IDD, ROAMING, SMS, or OTHER
 - market_segment: CONSUMER, BUSINESS, or UNKNOWN
-- primary_value_driver: DATA, VOICE, IDD, ROAMING, SOCIAL,
+- primary_value_driver: DATA, VOICE, IDD, ROAMING, SMS, SOCIAL,
   ENTERTAINMENT, BALANCED, or OTHER
 - promo_status: STANDARD, PROMO, or UNKNOWN
 - benefit_tags: a list of short strings

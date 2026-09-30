@@ -110,6 +110,7 @@ class PlanEnrichment(BaseModel):
         "VOICE",
         "IDD",
         "ROAMING",
+        "SMS",
         "SOCIAL",
         "ENTERTAINMENT",
         "BALANCED",

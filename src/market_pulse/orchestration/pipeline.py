@@ -155,6 +155,15 @@ def ensure_omantel_reference(
 
                 enriched_plans, errors = run_omantel_normalization(prepaid_df, postpaid_df)
 
+            # Every plan failing enrichment (e.g. the LLM ignoring the output
+            # format, or being unreachable) must not produce an empty but
+            # "COMPLETED" reference that silently empties Steps 3-6.
+            if errors and not enriched_plans:
+                raise RuntimeError(
+                    f"Omantel semantic enrichment failed for all {len(errors)} plans; "
+                    f"first error: {errors[0].get('error', '')[:500]}"
+                )
+
         except Exception as exc:  # noqa: BLE001 - a broken Omantel reference must block this run
             logger.error(
                 "%s | Failed to prepare Omantel reference: %s",
@@ -404,6 +413,23 @@ def _process_competitor(
         _save_stage(repo, run_id, competitor_run_id, current_stage, "PROCESSING", started_at)
 
         step3_matches = match_competitor_plans(enriched_plans, omantel_plans)
+
+        # Plans with no candidate family (NO_DIRECT_MATCH) or a structured
+        # similarity below 0.40 (NO_GOOD_MATCH without an LLM confidence) are
+        # decided without the LLM, so they are excluded from the failure rate.
+        llm_attempted = [
+            m
+            for m in step3_matches
+            if m.get("match_status") != "NO_DIRECT_MATCH"
+            and not (m.get("match_status") == "NO_GOOD_MATCH" and m.get("match_confidence") is None)
+        ]
+        match_errors = [m for m in llm_attempted if m.get("match_status") == "PROCESSING_ERROR"]
+
+        if len(match_errors) * 2 > len(llm_attempted):
+            raise RuntimeError(
+                f"Plan matching failed for {len(match_errors)} of {len(llm_attempted)} "
+                f"plans sent to the LLM; first error: {match_errors[0].get('error', '')[:500]}"
+            )
 
         _save_stage(
             repo, run_id, competitor_run_id, current_stage, "COMPLETED", started_at, result=step3_matches

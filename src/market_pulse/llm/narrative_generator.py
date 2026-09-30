@@ -69,7 +69,7 @@ Step5Item = dict[str, Any]
 
 # ReportChain.invoke({"facts": str}) -> GapNarrative
 ReportChain = Callable[[dict[str, str]], GapNarrative]
-_CACHE_PROMPT_VERSION = "gap-narrative-v1"
+_CACHE_PROMPT_VERSION = "gap-narrative-v2"
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,17 @@ The main measurable competitive issue.
 business_explanation:
 A short explanation of what drives the gap and
 why it matters commercially.
+
+OUTPUT FORMAT:
+
+Return exactly one JSON object with these three string fields
+at the top level:
+
+{{"gap_summary": "...", "key_issue": "...", "business_explanation": "..."}}
+
+Use these exact field names and no other fields.
+Return the JSON object only, with no Markdown, headings, bold text,
+code fence or other text.
 """,
         ),
         (

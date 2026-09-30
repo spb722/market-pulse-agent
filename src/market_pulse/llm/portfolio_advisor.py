@@ -23,7 +23,7 @@ from market_pulse.llm.cache import (
 from market_pulse.llm.structured_output import structured_output_chain
 from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
 
-_CACHE_PROMPT_VERSION = "portfolio-advice-v3"
+_CACHE_PROMPT_VERSION = "portfolio-advice-v4"
 
 
 portfolio_advice_prompt = ChatPromptTemplate.from_messages(
@@ -65,6 +65,24 @@ STRICT RULES:
     never describe one exposure score as another type of exposure.
 13. Mention a percentage only when it is the exact supplied gap_pct, or an
     exact similarity_score converted to a percentage.
+
+OUTPUT FORMAT:
+
+Return exactly one JSON object with these two fields at the top level:
+
+- segment_summary: one short paragraph (at most 500 characters)
+- recommendations: a list with one object per omantel_plan_id, each with:
+  - omantel_plan_id: the id from the facts
+  - decision: KEEP, MONITOR, ENHANCE, REPRICE, REPACKAGE, or INVESTIGATE
+  - suggested_action: one short action (at most 500 characters)
+
+Example:
+
+{{"segment_summary": "...", "recommendations": [{{"omantel_plan_id": "USG_0000000", "decision": "MONITOR", "suggested_action": "..."}}]}}
+
+Use these exact field names and no other fields.
+Return the JSON object only, with no Markdown, headings, bold text,
+code fence or other text.
 """,
         ),
         (
