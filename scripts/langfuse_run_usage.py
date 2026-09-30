@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 from market_pulse.config.settings import get_settings
 from market_pulse.llm.langfuse_metrics import get_langfuse_client
@@ -47,6 +48,12 @@ def main() -> None:
         parser.exit(1, "Langfuse is not enabled/configured (LANGFUSE_ENABLED and keys).\n")
 
     summary = summarize_run_usage(args.run_id, client)
+    if summary["total"]["llm_calls"] and not summary["total"]["total_tokens"]:
+        print(
+            "Warning: LLM calls were recorded, but no token usage was captured. "
+            "The displayed zero token totals do not establish actual usage.",
+            file=sys.stderr,
+        )
     if args.json:
         print(json.dumps(summary, indent=2))
         return

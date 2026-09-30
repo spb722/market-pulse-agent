@@ -53,7 +53,7 @@ Plan = dict[str, Any]
 
 # SemanticChain.invoke({"plan_json": str}) -> OmantelSemanticEnrichment
 SemanticChain = Callable[[dict[str, str]], OmantelSemanticEnrichment]
-_CACHE_PROMPT_VERSION = "omantel-semantic-enrichment-v1"
+_CACHE_PROMPT_VERSION = "omantel-semantic-enrichment-v3"
 
 
 semantic_prompt = ChatPromptTemplate.from_messages(
@@ -97,6 +97,24 @@ SMS
 VOICE
 
 Do not invent a tag merely because it is common in telecom.
+
+OUTPUT FORMAT:
+
+Return exactly one JSON object with these six fields at the top level:
+
+- semantic_product_type: COMBO, DATA, VOICE, IDD, ROAMING, SMS, or OTHER
+- market_segment: CONSUMER, BUSINESS, or UNKNOWN
+- primary_value_driver: DATA, VOICE, IDD, ROAMING, SMS, SOCIAL,
+  ENTERTAINMENT, BALANCED, or OTHER
+- benefit_tags: a list of short strings
+- classification_confidence: a number from 0 to 1
+- rationale: one short sentence
+
+Use these exact field names. Do not nest them inside "enrichment".
+Do not repeat the input product, and do not add fields such as
+plan_id, plan_name, operator, price_omr, or enrichment_notes.
+
+Return the JSON object only, with no Markdown fence or other text.
 """,
         ),
         (
