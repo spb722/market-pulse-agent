@@ -8,7 +8,7 @@ Values are sourced from environment variables (optionally via a local
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -67,8 +67,13 @@ class Settings(BaseSettings):
     # Disabled by default so an existing deployment does not unexpectedly
     # acquire Redis as a hard dependency. Enable with LLM_CACHE_ENABLED=true.
     # REDIS_URL supports the standard redis-py URI format, including auth:
-    # redis://:password@localhost:6379/0.
+    # redis://:password@localhost:6379/0. Use the ``rediss://`` scheme for
+    # TLS (e.g. AWS ElastiCache with in-transit encryption).
     redis_url: str = "redis://localhost:6379/0"
+    # ``standalone`` for a single Redis server; ``cluster`` for Redis/Valkey
+    # Cluster Mode (e.g. an ElastiCache cluster configuration endpoint), where
+    # keys are sharded across nodes and only database 0 exists.
+    redis_mode: Literal["standalone", "cluster"] = "standalone"
     llm_cache_enabled: bool = False
     llm_cache_fail_open: bool = True
     llm_cache_namespace: str = "market-pulse:llm"

@@ -9,6 +9,10 @@ stored.
 Redis is an optimization, not a pipeline dependency. With the default
 ``llm_cache_fail_open=True``, Redis connection/authentication failures are
 logged and the original LLM invocation proceeds normally.
+
+``REDIS_MODE`` selects the client: ``standalone`` (one Redis server) or
+``cluster`` (Redis/Valkey Cluster Mode, e.g. AWS ElastiCache). Only
+single-key commands are used, so cluster mode needs no key hash tags.
 """
 
 from __future__ import annotations
@@ -25,7 +29,8 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 
 from pydantic import BaseModel, ValidationError
 from redis import Redis
-from redis.exceptions import RedisError
+from redis.cluster import RedisCluster
+from redis.exceptions import RedisClusterException, RedisError
 
 from market_pulse.config.settings import Settings, get_settings
 from market_pulse.llm.langfuse_metrics import TokenUsageCollector, record_llm_metrics
@@ -33,6 +38,11 @@ from market_pulse.llm.langfuse_metrics import TokenUsageCollector, record_llm_me
 logger = logging.getLogger(__name__)
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
+
+# RedisClusterException (e.g. cluster unreachable during node discovery) does
+# not subclass RedisError, so both are needed for fail-open to cover cluster
+# mode.
+CACHE_ERRORS = (RedisError, RedisClusterException)
 
 COMPETITOR_CLASSIFICATION = "competitor_classification"
 OMANTEL_ENRICHMENT = "omantel_enrichment"
@@ -83,16 +93,19 @@ def reset_llm_cache_stats() -> None:
 class LLMResponseCache:
     """Redis-backed exact cache for Pydantic structured LLM responses."""
 
-    def __init__(self, settings: Settings, client: Redis | None = None) -> None:
+    def __init__(
+        self, settings: Settings, client: Redis | RedisCluster | None = None
+    ) -> None:
         self.settings = settings
         self.enabled = settings.llm_cache_enabled
         self._client = client
         self._warned_unavailable = False
 
     @property
-    def client(self) -> Redis:
+    def client(self) -> Redis | RedisCluster:
         if self._client is None:
-            self._client = Redis.from_url(
+            client_class = RedisCluster if self.settings.redis_mode == "cluster" else Redis
+            self._client = client_class.from_url(
                 self.settings.redis_url,
                 decode_responses=True,
                 socket_connect_timeout=self.settings.llm_cache_socket_timeout_seconds,
@@ -159,7 +172,7 @@ class LLMResponseCache:
 
         try:
             raw = self.client.get(key)
-        except RedisError as exc:
+        except CACHE_ERRORS as exc:
             self._redis_failure(stage, "read", exc)
             return key, None
 
@@ -177,7 +190,7 @@ class LLMResponseCache:
             logger.warning("Discarding invalid LLM cache entry: stage=%s key=%s: %s", stage, key, exc)
             try:
                 self.client.delete(key)
-            except RedisError as delete_exc:
+            except CACHE_ERRORS as delete_exc:
                 self._redis_failure(stage, "delete", delete_exc)
             return key, None
 
@@ -203,14 +216,14 @@ class LLMResponseCache:
         try:
             # redis-py's SET with EX writes the value and expiration atomically.
             self.client.set(key, value, ex=ttl)
-        except RedisError as exc:
+        except CACHE_ERRORS as exc:
             self._redis_failure(stage, "write", exc)
             return
 
         _stats.increment(stage, "store")
         logger.debug("Stored LLM cache entry: stage=%s key=%s ttl=%d", stage, key, ttl)
 
-    def _redis_failure(self, stage: str, operation: str, exc: RedisError) -> None:
+    def _redis_failure(self, stage: str, operation: str, exc: Exception) -> None:
         _stats.increment(stage, "error")
         if not self.settings.llm_cache_fail_open:
             raise exc
