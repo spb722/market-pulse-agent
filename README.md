@@ -58,6 +58,57 @@ and per-stage overrides in `.env.example`; input, prompt, model or output-schema
 changes automatically create a new cache key. Redis failures are fail-open by default,
 so the pipeline continues with live LLM calls.
 
+#### Redis cache: standalone vs cluster
+
+`REDIS_MODE` selects how the app connects to Redis. Pick the one that matches your
+Redis deployment:
+
+| `REDIS_MODE` | Use for | Client |
+|---|---|---|
+| `standalone` (default) | One Redis server — local Docker/Homebrew Redis, ElastiCache with cluster mode **disabled** | `redis.Redis` |
+| `cluster` | Redis/Valkey **Cluster Mode** — e.g. an AWS ElastiCache cluster configuration endpoint (`clustercfg....`) | `redis.cluster.RedisCluster` |
+
+Standalone (local development):
+
+```dotenv
+REDIS_MODE=standalone
+REDIS_URL=redis://localhost:6379/0
+# with a password:
+# REDIS_URL=redis://:password@localhost:6379/0
+LLM_CACHE_ENABLED=true
+```
+
+Cluster (AWS ElastiCache, TLS + password auth):
+
+```dotenv
+REDIS_MODE=cluster
+REDIS_URL=rediss://:<AUTH_TOKEN>@clustercfg.<cluster-name>.<id>.<region>.cache.amazonaws.com:6379/0
+LLM_CACHE_ENABLED=true
+```
+
+`REDIS_URL` rules:
+
+- `redis://` = plain connection; `rediss://` (two s's) = TLS. Use `rediss://` whenever
+  in-transit encryption is enabled.
+- The password goes after a colon before `@`: `rediss://:<password>@host:6379/0`.
+  For RBAC users use `rediss://<user>:<password>@host:6379/0`.
+- URL-encode the password if it contains `@ : / # % ?` (for example
+  `python -c "import urllib.parse; print(urllib.parse.quote('<token>', safe=''))"`).
+- Cluster mode only has database `0`; any other database number is rejected.
+- Never commit the real token — inject `REDIS_URL` from your secret store or
+  deployment environment.
+
+`REDIS_MODE` must match the server. Using `standalone` against a cluster endpoint does
+not crash, but most lookups land on the wrong shard (`MOVED` errors) and silently
+become cache misses because of fail-open.
+
+Verifying a new Redis setup: ElastiCache is reachable only from inside its VPC, and
+fail-open hides connection problems. For the first test run set
+`LLM_CACHE_FAIL_OPEN=false` so any connection, TLS or authentication error surfaces,
+submit the same competitor twice, and confirm the second run reports cache hits
+(`cache_hits` in Langfuse). Then set it back to `true`. If TLS connections time out,
+raise `LLM_CACHE_SOCKET_TIMEOUT_SECONDS` (default `2.0`).
+
 To send LLM metrics to Langfuse, set `LANGFUSE_ENABLED=true` and configure its
 public key, secret key, and base URL. Each structured-call observation contains
 input tokens, output tokens, Redis response-cache hits (`cached`), and total

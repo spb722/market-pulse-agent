@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import BaseModel, ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import RedisClusterException
 
 from market_pulse.config.settings import Settings
 from market_pulse.llm.cache import (
@@ -219,6 +220,92 @@ def test_redis_failure_can_be_configured_to_fail_closed():
             invoke=lambda: CachedAnswer(value="not reached"),
             cache=cache,
         )
+
+
+class ClusterUnreachableRedis:
+    def get(self, key: str):
+        raise RedisClusterException("Redis Cluster cannot be connected")
+
+    def set(self, key: str, value: str, ex: int | None = None):
+        raise RedisClusterException("Redis Cluster cannot be connected")
+
+
+@pytest.mark.parametrize(
+    ("mode", "client_path"),
+    [
+        ("standalone", "market_pulse.llm.cache.Redis.from_url"),
+        ("cluster", "market_pulse.llm.cache.RedisCluster.from_url"),
+    ],
+)
+def test_redis_mode_selects_client(mode, client_path):
+    settings = cache_settings(
+        redis_mode=mode,
+        redis_url="rediss://:token@cache.example.com:6379/0",
+        llm_cache_socket_timeout_seconds=3.5,
+    )
+    with patch(client_path) as from_url:
+        client = LLMResponseCache(settings).client
+
+    assert client is from_url.return_value
+    from_url.assert_called_once_with(
+        "rediss://:token@cache.example.com:6379/0",
+        decode_responses=True,
+        socket_connect_timeout=3.5,
+        socket_timeout=3.5,
+    )
+
+
+def test_redis_mode_defaults_to_standalone():
+    assert cache_settings().redis_mode == "standalone"
+
+
+def test_settings_reject_unknown_redis_mode():
+    with pytest.raises(ValidationError):
+        cache_settings(redis_mode="sentinel")
+
+
+def test_cluster_failure_fails_open_to_llm():
+    cache = LLMResponseCache(cache_settings(), client=ClusterUnreachableRedis())
+
+    result = invoke_structured_cached(
+        stage="stage",
+        request={"value": "A"},
+        output_model=CachedAnswer,
+        prompt_version="prompt-v1",
+        invoke=MagicMock(return_value=CachedAnswer(value="from llm")),
+        cache=cache,
+    )
+
+    assert result.value == "from llm"
+    assert get_llm_cache_stats()["stage"]["error"] == 2  # read + attempted write
+
+
+def test_cluster_failure_can_be_configured_to_fail_closed():
+    cache = LLMResponseCache(
+        cache_settings(llm_cache_fail_open=False), client=ClusterUnreachableRedis()
+    )
+
+    with pytest.raises(RedisClusterException):
+        invoke_structured_cached(
+            stage="stage",
+            request={"value": "A"},
+            output_model=CachedAnswer,
+            prompt_version="prompt-v1",
+            invoke=lambda: CachedAnswer(value="not reached"),
+            cache=cache,
+        )
+
+
+def test_cluster_mode_rejects_non_zero_db_and_fails_open():
+    # RedisCluster raises RedisClusterException at construction for db != 0;
+    # the lazily-built client must still be covered by fail-open.
+    settings = cache_settings(redis_mode="cluster", redis_url="redis://localhost:6379/1")
+    cache = LLMResponseCache(settings)
+
+    key, cached = cache.lookup("stage", {"value": "A"}, CachedAnswer, "prompt-v1")
+
+    assert key is not None and cached is None
+    assert get_llm_cache_stats()["stage"]["error"] == 1
 
 
 def test_settings_reject_non_positive_ttl():
