@@ -295,6 +295,25 @@ def get_sms_value(plan: Plan) -> Optional[float]:
     return clean_number(plan.get("sms_count"))
 
 
+def get_social_value(plan: Plan) -> Optional[float]:
+    return clean_number(plan.get("social_pass_gb"))
+
+
+def get_roaming_value(plan: Plan) -> Optional[float]:
+    """Roaming data (GB) bundled in a plan.
+
+    A plan flagged ``roaming_included`` with no explicit ``roaming_data_gb``
+    (e.g. Ooredoo "Roam Like Home") uses its ``data_gb`` as the roaming value.
+    """
+
+    value = clean_number(plan.get("roaming_data_gb"))
+
+    if value is None and plan.get("roaming_included") is True:
+        value = clean_number(plan.get("data_gb"))
+
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Gap-scoring core
 # ---------------------------------------------------------------------------
@@ -479,6 +498,32 @@ def validity_gap(
     )
 
 
+def roaming_gap(
+    competitor_plan: Plan,
+    omantel_plan: Plan,
+    config: Optional[GapAnalysisConfig] = None,
+) -> dict[str, Any]:
+    # ROAMING products already compare roaming data via the ``data`` metric.
+    if get_product_type(competitor_plan) == "ROAMING" or (
+        get_product_type(omantel_plan) == "ROAMING"
+    ):
+        return {
+            "competitor": get_roaming_value(competitor_plan),
+            "omantel": get_roaming_value(omantel_plan),
+            "difference": None,
+            "gap_pct": None,
+            "normalized_advantage": None,
+            "position": "NOT_SCORED",
+            "note": "ROAMING products compare roaming data via the data metric",
+        }
+
+    return finite_metric_gap(
+        get_roaming_value(competitor_plan),
+        get_roaming_value(omantel_plan),
+        config=config,
+    )
+
+
 def build_metric_gaps(
     competitor_plan: Plan,
     omantel_plan: Plan,
@@ -506,6 +551,12 @@ def build_metric_gaps(
             competitor_plan, omantel_plan, get_sms_value, has_unlimited_sms, config=config
         ),
         "validity": validity_gap(competitor_plan, omantel_plan, config=config),
+        "social_data": finite_metric_gap(
+            get_social_value(competitor_plan),
+            get_social_value(omantel_plan),
+            config=config,
+        ),
+        "roaming": roaming_gap(competitor_plan, omantel_plan, config=config),
     }
 
 

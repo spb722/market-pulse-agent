@@ -31,6 +31,7 @@ passed directly to a service function in tests) changes computed results.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Union
@@ -40,14 +41,25 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from market_pulse.config.settings import Settings, get_settings
 
+logger = logging.getLogger(__name__)
+
 # Valid metric names for gap-analysis weights -- must match the metric keys
 # actually produced by build_metric_gaps in gap_analysis_service.py.
-_VALID_METRIC_NAMES = {"price", "data", "voice", "idd", "sms", "validity"}
+_VALID_METRIC_NAMES = {
+    "price",
+    "data",
+    "voice",
+    "idd",
+    "sms",
+    "validity",
+    "social_data",
+    "roaming",
+}
 
-# Hand-edited YAML weights are not expected to be floating-point-exact; this
-# tolerance is loose enough to accept e.g. 0.30 + 0.30 + 0.20 + 0.10 + 0.10
-# floating-point noise, but tight enough to catch a real typo (e.g. 0.03
-# instead of 0.3, which would be off by ~0.27).
+# Tolerance for the "sums to 1.0" check on business_exposure_weights (Step 5),
+# and for deciding whether to log effective Step 4 weights (which no longer
+# have to sum to 1.0). Loose enough to absorb floating-point noise, tight
+# enough to catch a real typo (e.g. 0.03 instead of 0.3).
 _WEIGHT_SUM_TOLERANCE = 1e-3
 
 
@@ -84,11 +96,26 @@ class GapAnalysisConfig(BaseModel):
                         f"must be >= 0, got {weight}."
                     )
 
+            # Weights need not sum to 1.0: compute_weighted_position
+            # re-normalizes over the metrics that actually have values.
             total = sum(metric_weights.values())
-            if abs(total - 1.0) > _WEIGHT_SUM_TOLERANCE:
+            if total <= 0:
                 raise ValueError(
-                    f"gap_analysis.weights['{product_type}'] weights must sum "
-                    f"to 1.0, got {total} ({metric_weights})."
+                    f"gap_analysis.weights['{product_type}'] total weight "
+                    f"must be > 0, got {total} ({metric_weights})."
+                )
+
+            if abs(total - 1.0) > _WEIGHT_SUM_TOLERANCE:
+                effective = {
+                    metric: round(weight / total, 4)
+                    for metric, weight in metric_weights.items()
+                }
+                logger.info(
+                    "gap_analysis.weights['%s'] sums to %s (not 1.0); "
+                    "effective normalized weights: %s",
+                    product_type,
+                    round(total, 4),
+                    effective,
                 )
 
         return self

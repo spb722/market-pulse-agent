@@ -77,6 +77,7 @@ class NormalizedOmantelPlan(BaseModel):
 
     data_gb: Optional[float] = None
     social_pass_gb: Optional[float] = None
+    roaming_data_gb: Optional[float] = None
     unlimited_data: bool
 
     voice_minutes: Optional[float] = None
@@ -94,6 +95,9 @@ class NormalizedOmantelPlan(BaseModel):
     # cleanliness (may be missing/NaN) -- kept loosely typed on purpose.
     message_english: Any = None
     message_arabic: Any = None
+
+    # Free-text benefits from the catalogue (";"-separated, not split).
+    extra_benefits: Optional[str] = None
 
     quality_flags: list[str] = Field(default_factory=list)
 

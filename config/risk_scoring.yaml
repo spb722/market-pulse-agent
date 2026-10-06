@@ -21,7 +21,7 @@
 gap_analysis:
 
   # How close two plans' normalized advantage (-1..1) on a single metric
-  # (price/data/voice/idd/sms/validity) must be to call it a tie ("PARITY")
+  # (price/data/voice/idd/sms/validity/social_data/roaming) must be to call it a tie ("PARITY")
   # instead of declaring one side ahead.
   #   RAISE this  -> more metrics get called "PARITY" (harder to trigger an
   #                  advantage/disadvantage label).
@@ -41,8 +41,11 @@ gap_analysis:
   overall_position_threshold: 10
 
   # How much each metric counts toward a plan's overall commercial score,
-  # broken down by what KIND of plan it is. Each product type's weights
-  # below should add up to 1.0 (100%).
+  # broken down by what KIND of plan it is. Weights do NOT have to add up
+  # to 1.0 -- they are always re-normalized to 100% over the metrics that
+  # are actually scored for a plan (only the total must be > 0). At load
+  # time the effective normalized weights are logged for any product type
+  # whose total is not 1.0.
   #
   # If a metric can't be scored for a given plan (e.g. no IDD data on
   # either side), it's automatically dropped and the REMAINING weights for
@@ -52,10 +55,10 @@ gap_analysis:
   # RAISING a metric's weight makes that dimension matter MORE to the
   # final score for that plan type. LOWERING it makes that dimension
   # matter LESS. You can also add or remove a metric key entirely for a
-  # given product type (e.g. add "sms" to COMBO) -- just make sure the
-  # remaining numbers for that type still sum to 1.0.
+  # given product type (e.g. add "sms" to COMBO).
   #
-  # Valid metric names: price, data, voice, idd, sms, validity.
+  # Valid metric names: price, data, voice, idd, sms, validity,
+  # social_data, roaming.
   # "OTHER" must always be present -- it's the fallback used for any plan
   # whose product type isn't explicitly listed below.
   weights:
@@ -67,6 +70,8 @@ gap_analysis:
       voice: 0.20      # voice minutes matter somewhat less than price/data
       idd: 0.10        # international calling matters least
       validity: 0.10   # how long the plan lasts matters least
+      social_data: 0.05  # social-pass GB; dropped (and rest rescaled) if either side is unknown
+      roaming: 0.05      # roaming data GB; dropped if either side is unknown
 
     # A plan whose principal commercial product is data-only.
     DATA:
