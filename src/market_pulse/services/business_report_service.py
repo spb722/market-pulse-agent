@@ -20,6 +20,7 @@ from market_pulse.config.settings import Settings, get_settings
 from market_pulse.llm.langfuse_metrics import flush_langfuse, llm_trace
 from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
 from market_pulse.schemas.runs import STAGE_NAMES, ReportJob, utcnow
+from market_pulse.services.gap_analysis_service import clean_text, find_plan
 from market_pulse.services.portfolio_analysis_service import build_portfolio_analysis
 from market_pulse.storage.file_repository import FileRunRepository
 
@@ -92,13 +93,26 @@ def _stage_result(
     return result.result
 
 
-def _omantel_count(run_id: str, repo: FileRunRepository) -> int:
+def _omantel_plans(run_id: str, repo: FileRunRepository) -> list[dict]:
     stage = repo.get_omantel_stage_result(run_id)
     if stage is None or stage.status != "COMPLETED" or stage.result is None:
         raise ValueError("Omantel reference is not ready for reporting.")
     result = stage.result
-    enriched_plans = result[0] if isinstance(result, list) else result.get("enriched_plans", [])
-    return len(enriched_plans)
+    return result[0] if isinstance(result, list) else result.get("enriched_plans", [])
+
+
+def _omantel_count(run_id: str, repo: FileRunRepository) -> int:
+    return len(_omantel_plans(run_id, repo))
+
+
+def _extra_benefits(plans: list[dict], plan_id: Any, plan_name: Any) -> str | None:
+    """Display-only lookup, resolving the plan exactly as Step 4 did."""
+    if not plan_id and not plan_name:
+        return None
+    plan = find_plan(plans, plan_id or None, plan_name)
+    if plan is None:
+        return None
+    return clean_text(plan.get("extra_benefits")) or None
 
 
 def _count_by(items: list[dict], key: str) -> dict[str, int]:
@@ -181,6 +195,14 @@ def build_competitor_dataset(
     risk_scores = [r["risk_score"] for r in scored if r.get("risk_score") is not None]
 
     records = [_map_record(r, name) for r in narrative["records"]]
+    omantel_plans = _omantel_plans(run_id, repo)
+    for record in records:
+        record["competitor_extra_benefits"] = _extra_benefits(
+            enriched_plans, record["competitor_plan_id"], record["competitor_plan"]
+        )
+        record["omantel_extra_benefits"] = _extra_benefits(
+            omantel_plans, record["omantel_plan_id"], record["omantel_plan"]
+        )
     no_match = [_map_no_match(r, name) for r in narrative["no_match_report"]]
 
     summary = {

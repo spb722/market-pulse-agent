@@ -892,6 +892,7 @@ function renderMainTable(filteredRecords) {
         <div><h4>Risk drivers</h4><p>${r.risk_reasons ? escapeHtml(r.risk_reasons) : '—'}</p>
           <h4 style="margin-top:10px;">Competitor / Omantel advantages</h4><p><strong>Competitor:</strong> ${r.competitor_advantages || '—'}<br/><strong>Omantel:</strong> ${r.omantel_advantages || '—'}</p>
           ${r.capability_gaps ? `<h4 style="margin-top:10px;">Capability gaps</h4><p>${escapeHtml(r.capability_gaps)}</p>` : ''}
+          <h4 style="margin-top:10px;">Extra benefits</h4><p><strong>Competitor:</strong> ${benefitsHtml(r.competitor_extra_benefits)}<br/><strong>Omantel:</strong> ${benefitsHtml(r.omantel_extra_benefits)}</p>
         </div>` }, [])]),
     ]);
     tbody.appendChild(detailTr);
@@ -902,6 +903,13 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// extra_benefits is free text with items separated by ";".
+function benefitsHtml(s) {
+  if (!s) return '—';
+  const items = String(s).split(';').map((x) => x.trim()).filter(Boolean);
+  return items.length ? items.map((x) => '• ' + escapeHtml(x)).join('<br/>') : '—';
 }
 
 function toggleDetail(rowId) {
@@ -951,7 +959,7 @@ function renderNoMatchTable() {
 // CSV export (client-side, current filtered+sorted view)
 // ---------------------------------------------------------------------------
 function exportCsv(records) {
-  const cols = ['competitor','competitor_plan','omantel_plan','category','product_type','match_status','overall_position','commercial_position_score','primary_attention_area','risk_score','risk_level','risk_reasons','gap_summary','key_issue','business_explanation'];
+  const cols = ['competitor','competitor_plan','omantel_plan','category','product_type','match_status','overall_position','commercial_position_score','primary_attention_area','risk_score','risk_level','risk_reasons','gap_summary','key_issue','business_explanation','competitor_extra_benefits','omantel_extra_benefits'];
   const escapeCsv = (v) => {
     if (v === null || v === undefined) return '';
     const s = String(v).replace(/"/g, '""');
