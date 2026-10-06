@@ -102,7 +102,7 @@ def _clean_number(value: Any) -> Optional[float]:
         return None
 
 
-METRICS = ["price", "data", "voice", "idd", "sms", "validity"]
+METRICS = ["price", "data", "voice", "idd", "sms", "validity", "social_data", "roaming"]
 
 
 def _metric_details(step4_item: Step4Item, metric: str) -> dict[str, Any]:

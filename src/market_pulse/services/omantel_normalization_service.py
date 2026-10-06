@@ -304,17 +304,28 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
     # SMS
     sms_count, unlimited_sms = normalize_sms(row.get("units_sms"))
 
+    # Social-pass data (GB), prepaid AND postpaid.
+    # USER-REQUESTED CHANGE from reference/step2.py (which kept it for
+    # prepaid only, and only when > 0): in the catalogue 0 means "none" and
+    # blank means "unknown", so 0 is kept as 0.0 and only blank -> None.
+    social_data_gb = clean_number(row.get("data_social"))
+
+    # Roaming data bundled in the plan (GB). Same 0-vs-blank rule.
+    roaming_data_gb = clean_number(row.get("data_roaming"))
+
+    # Free-text benefits (items separated by ";"); passed through unsplit.
+    extra_benefits = row.get("extra_benefits")
+
+    if extra_benefits is None or pd.isna(extra_benefits):
+        extra_benefits = None
+    else:
+        extra_benefits = str(extra_benefits).strip() or None
+
     # Prepaid-specific detailed fields
-    social_data_gb = None
     flexi_minutes = None
     intl_minutes = None
 
     if category == "PREPAID":
-        social = clean_number(row.get("data_social"))
-
-        if social and social > 0:
-            social_data_gb = social
-
         flexi = clean_number(row.get("min_flex"))
 
         if flexi and flexi > 0:
@@ -352,6 +363,7 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
         # Data
         "data_gb": data_gb,
         "social_pass_gb": social_data_gb,
+        "roaming_data_gb": roaming_data_gb,
         "unlimited_data": unlimited_data,
         # Voice
         "voice_minutes": voice_minutes,
@@ -368,6 +380,7 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
         "source_status": (
             row.get("product_status") if category == "PREPAID" else None
         ),
+        "extra_benefits": extra_benefits,
         # Keep source content for LLM/audit
         "message_english": row.get("message_english"),
         "message_arabic": row.get("message_arabic"),

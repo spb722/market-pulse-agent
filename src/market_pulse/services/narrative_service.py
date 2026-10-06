@@ -197,7 +197,7 @@ def get_product_type(plan: Plan) -> str:
 # Step 4-shape readers
 # ---------------------------------------------------------------------------
 
-METRICS = ["price", "data", "voice", "idd", "sms", "validity"]
+METRICS = ["price", "data", "voice", "idd", "sms", "validity", "social_data", "roaming"]
 
 
 def metric_details(step4_item: dict[str, Any], metric: str) -> dict[str, Any]:
