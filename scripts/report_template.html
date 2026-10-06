@@ -692,7 +692,7 @@ function renderExecutiveDecisions() {
       ]),
       el('td', {}, [
         el('div', { class: 'plan-name' }, [text(row.omantel_plan)]),
-        el('div', { class: 'comparison-meta' }, [text((row.main_gaps || []).length ? `Main gaps: ${row.main_gaps.join(', ')}` : 'No named metric gap')]),
+        el('div', { class: 'comparison-meta' }, [text((row.main_gaps || []).length ? `Main gaps: ${row.main_gaps.map(displayMetric).join(', ')}` : 'No named metric gap')]),
       ]),
     ];
 
@@ -704,7 +704,7 @@ function renderExecutiveDecisions() {
       } else {
         comparisons.forEach((item) => {
           const issue = item.primary_attention_area && item.primary_attention_area !== 'BALANCED'
-            ? `Main issue: ${item.primary_attention_area}`
+            ? `Main issue: ${displayMetric(item.primary_attention_area)}`
             : 'No primary issue';
           stack.appendChild(el('div', { class: 'comparison-item' }, [
             el('div', { class: 'comparison-plan' }, [text(item.competitor_plan || 'Unnamed plan')]),
@@ -726,7 +726,7 @@ function renderExecutiveDecisions() {
     const sourceLabel = row.analysis_source === 'LLM_GENERATED' ? 'AI synthesis' : 'Deterministic fallback';
     cells.push(el('td', {}, [
       el('div', { class: 'ai-label' }, [text('Calculated rationale')]),
-      text(row.why_it_matters || '—'),
+      text(row.why_it_matters ? displayMetric(row.why_it_matters) : '—'),
     ]));
 
     const decisionKey = row.decision === 'KEEP' ? 'good' : (row.decision === 'MONITOR' ? 'neutral' : 'warning');
@@ -850,7 +850,7 @@ function metricMiniTable(metricGaps) {
   if (!metricGaps) return '<p>No metric detail.</p>';
   const rows = Object.entries(metricGaps).map(([metric, g]) => {
     const posKey = POSITION_STATUS_KEY[g.position] || 'neutral';
-    return `<tr><td>${metric.toUpperCase()}</td><td>${g.competitor === null ? '—' : g.competitor}</td><td>${g.omantel === null ? '—' : g.omantel}</td><td>${g.gap_pct === null || g.gap_pct === undefined ? '—' : g.gap_pct + '%'}</td><td>${badgeHtml(g.position || 'NOT_SCORED', posKey)}</td></tr>`;
+    return `<tr><td>${metric.toUpperCase().replace(/_/g, ' ')}</td><td>${g.competitor === null ? '—' : g.competitor}</td><td>${g.omantel === null ? '—' : g.omantel}</td><td>${g.gap_pct === null || g.gap_pct === undefined ? '—' : g.gap_pct + '%'}</td><td>${badgeHtml(g.position || 'NOT_SCORED', posKey)}</td></tr>`;
   }).join('');
   return `<table class="metric-mini-table"><thead><tr><td><b>Metric</b></td><td><b>Competitor</b></td><td><b>Omantel</b></td><td><b>Gap %</b></td><td><b>Position</b></td></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -877,7 +877,7 @@ function renderMainTable(filteredRecords) {
       el('td', {}, [text(r.category || '—')]),
       el('td', {}, [text(r.product_type || '—')]),
       el('td', { html: r.overall_position ? badgeHtml(r.overall_position.replace('_', ' '), posKey) : badgeHtml('Not analyzed', 'neutral') }, []),
-      el('td', {}, [text(r.primary_attention_area || '—')]),
+      el('td', {}, [text(r.primary_attention_area ? displayMetric(r.primary_attention_area) : '—')]),
       el('td', { class: 'num' }, [text(r.risk_score === null || r.risk_score === undefined ? '—' : fmtNum(r.risk_score))]),
       el('td', { html: badgeHtml((r.risk_level || 'NOT SCORED').replace('_',' '), riskKey) }, []),
     ]);
@@ -889,9 +889,9 @@ function renderMainTable(filteredRecords) {
         `<div><h4>Gap summary</h4><p>${r.gap_summary ? escapeHtml(r.gap_summary) : (r.gap_analysis_status === 'ANALYZED' ? 'No narrative yet — needs a Scored risk result.' : 'Not analyzed: ' + escapeHtml(r.match_status || ''))}</p>
           <h4 style="margin-top:10px;">Business explanation</h4><p>${r.business_explanation ? escapeHtml(r.business_explanation) : '—'}</p></div>
         <div><h4>Metric-by-metric</h4>${metricMiniTable(r.metric_gaps)}</div>
-        <div><h4>Risk drivers</h4><p>${r.risk_reasons ? escapeHtml(r.risk_reasons) : '—'}</p>
-          <h4 style="margin-top:10px;">Competitor / Omantel advantages</h4><p><strong>Competitor:</strong> ${r.competitor_advantages || '—'}<br/><strong>Omantel:</strong> ${r.omantel_advantages || '—'}</p>
-          ${r.capability_gaps ? `<h4 style="margin-top:10px;">Capability gaps</h4><p>${escapeHtml(r.capability_gaps)}</p>` : ''}
+        <div><h4>Risk drivers</h4><p>${r.risk_reasons ? escapeHtml(displayMetric(r.risk_reasons)) : '—'}</p>
+          <h4 style="margin-top:10px;">Competitor / Omantel advantages</h4><p><strong>Competitor:</strong> ${r.competitor_advantages ? escapeHtml(displayMetric(r.competitor_advantages)) : '—'}<br/><strong>Omantel:</strong> ${r.omantel_advantages ? escapeHtml(displayMetric(r.omantel_advantages)) : '—'}</p>
+          ${r.capability_gaps ? `<h4 style="margin-top:10px;">Capability gaps</h4><p>${escapeHtml(displayMetric(r.capability_gaps))}</p>` : ''}
           <h4 style="margin-top:10px;">Extra benefits</h4><p><strong>Competitor:</strong> ${benefitsHtml(r.competitor_extra_benefits)}<br/><strong>Omantel:</strong> ${benefitsHtml(r.omantel_extra_benefits)}</p>
         </div>` }, [])]),
     ]);
@@ -903,6 +903,12 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Metric keys stay snake_case in the data (portfolio gap de-duplication
+// relies on them matching capability names); only the displayed text changes.
+function displayMetric(s) {
+  return String(s).replace(/\bSOCIAL_DATA\b/gi, 'SOCIAL DATA');
 }
 
 // extra_benefits is free text with items separated by ";".
@@ -966,7 +972,7 @@ function exportCsv(records) {
     return /[",\n]/.test(s) ? `"${s}"` : s;
   };
   const lines = [cols.join(',')];
-  sortRecords(records).forEach((r) => lines.push(cols.map((c) => escapeCsv(r[c])).join(',')));
+  sortRecords(records).forEach((r) => lines.push(cols.map((c) => escapeCsv(typeof r[c] === 'string' ? displayMetric(r[c]) : r[c])).join(',')));
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
