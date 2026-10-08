@@ -1,0 +1,50 @@
+id,bundle_type,product_id,product_name,price,product_type,unit_in_mb,validity_in_days,type,units_minutes,units_sms,data,data_social,data_roaming,min,min_flex,idd,dial,owner,message_english,message_arabic,ui_product_id,ui_msg_id,offer_type,whitelist,autobonus,channel,product_status,confirmation_message_id,autobonus_autopilot,extra_benefits
+7841,Combo/Hybrid Offer,7841,NBO_VF_RO1_1Dot5GB_15MIN_28D,1.0,COMBO,1536.0,28.0,Master,15.0,0.0,1.5,0.0,0.0,15.0,0.0,0.0,,Omantel,,,7841,,BTL,,,,active,,,
+7845,Combo/Hybrid Offer,7845,NBO_VF_RO3_6GB_100MIN_28D,3.0,COMBO,6144.0,28.0,Master,100.0,0.0,6.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,7845,,BTL,,,,active,,,
+7847,Combo/Hybrid Offer,7847,NBO_VF_RO4_8GB_200MIN_28D,4.0,COMBO,8192.0,28.0,Master,200.0,0.0,8.0,0.0,0.0,200.0,0.0,0.0,,Omantel,,,7847,,BTL,,,,active,,,
+7849,Combo/Hybrid Offer,7849,NBO_VF_RO6_13GB_300MIN_28D,6.0,COMBO,13312.0,28.0,Master,300.0,0.0,13.0,0.0,0.0,300.0,0.0,0.0,,Omantel,,,7849,,BTL,,,,active,,,
+7854,Data Offer,7854,NBO_BTL_DATA_5GB_2RO_7D,2.0,DATA,5120.0,7.0,Addon,0.0,0.0,5.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7854,,BTL,,,,active,,,
+7855,Data Offer,7855,NBO_BTL_DATA_7GB_3RO_7D,3.0,DATA,7168.0,7.0,Addon,0.0,0.0,7.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7855,,BTL,,,,active,,,
+7856,Data Offer,7856,NBO_BTL_DATA_10GB_4RO_7D,4.0,DATA,10240.0,7.0,Addon,0.0,0.0,10.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7856,,BTL,,,,active,,,
+7858,Data Offer,7858,NBO_BTL_DATA_12GB_5RO_7D,5.0,DATA,12288.0,7.0,Addon,0.0,0.0,12.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7858,,BTL,,,,active,,,
+7861,Data Offer,7861,NBO_BTL_DATA_15GB_6RO_7D,6.0,DATA,15360.0,7.0,Addon,0.0,0.0,15.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7861,,BTL,,,,active,,,
+7865,Data Offer,7865,NBO_BTL_DATA_20GB_8RO_7D,8.0,DATA,20480.0,7.0,Addon,0.0,0.0,20.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7865,,BTL,,,,active,,,
+7868,Data Offer,7868,NBO_BTL_DATA_25GB_10RO_7D,10.0,DATA,25600.0,7.0,Addon,0.0,0.0,25.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,7868,,BTL,,,,active,,,
+7908,Combo/Hybrid Offer,7908,NBO_VF_RO2_3GB_50MIN_28D,2.0,COMBO,3072.0,28.0,Master,50.0,0.0,3.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,7908,,BTL,,,,active,,,
+8145,Combo/Hybrid Offer,8145,NBO_RO3_7GB_150FLEXMIN_28D_Bengali,3.0,COMBO,7168.0,28.0,Master,150.0,0.0,7.0,0.0,0.0,150.0,0.0,0.0,,Omantel,,,8145,,BTL,,,,active,,,Flexi minutes; Targeted at Bengali-speaking customers
+8147,Combo/Hybrid Offer,8147,NBO_RO2_4GB_100FLEXMIN_28D_Bengali,2.0,COMBO,4096.0,28.0,Master,100.0,0.0,4.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,8147,,BTL,,,,active,,,Flexi minutes; Targeted at Bengali-speaking customers
+8179,Combo/Hybrid Offer,8179,NBO_ RO3_8GB_100MIN_28D,3.0,COMBO,8192.0,28.0,Master,100.0,0.0,8.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,8179,,BTL,,,,active,,,
+8180,Combo/Hybrid Offer,8180,NBO_RO2_4GB_50MIN_28D,2.0,COMBO,4096.0,28.0,Master,50.0,0.0,4.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,8180,,BTL,,,,active,,,
+8181,Combo/Hybrid Offer,8181,NBO_RO1_1Dot5GB_25MIN_28D,1.0,COMBO,1536.0,28.0,Master,25.0,0.0,1.5,0.0,0.0,25.0,0.0,0.0,,Omantel,,,8181,,BTL,,,,active,,,
+8204,IDD,8204,IDD_BTL_PAK_70MIN_RO1_7D,1.0,IDD,0.0,7.0,Addon,70.0,0.0,0.0,0.0,0.0,0.0,0.0,70.0,,Omantel,,,8204,,BTL,,,,active,,,IDD destination: Pakistan
+8205,IDD,8205,IDD_BTL_PAK_120MIN_RO2_14D,2.0,IDD,0.0,14.0,Addon,120.0,0.0,0.0,0.0,0.0,0.0,0.0,120.0,,Omantel,,,8205,,BTL,,,,active,,,IDD destination: Pakistan
+8207,IDD,8207,IDD_BTL_PAK_200MIN_RO4_28D,4.0,IDD,0.0,28.0,Addon,200.0,0.0,0.0,0.0,0.0,0.0,0.0,200.0,,Omantel,,,8207,,BTL,,,,active,,,IDD destination: Pakistan
+8210,IDD,8210,IDD_BTL_India_100MIN_RO1_7D,1.0,IDD,0.0,7.0,Addon,100.0,0.0,0.0,0.0,0.0,0.0,0.0,100.0,,Omantel,,,8210,,BTL,,,,active,,,IDD destination: India
+8211,IDD,8211,IDD_BTL_India_200MIN_RO2_14D,2.0,IDD,0.0,14.0,Addon,200.0,0.0,0.0,0.0,0.0,0.0,0.0,200.0,,Omantel,,,8211,,BTL,,,,active,,,IDD destination: India
+8212,IDD,8212,IDD_BTL_India_600MIN_RO5_28D,5.0,IDD,0.0,28.0,Addon,600.0,0.0,0.0,0.0,0.0,0.0,0.0,600.0,,Omantel,,,8212,,BTL,,,,active,,,IDD destination: India
+8214,IDD,8214,IDD_BTL_Bangla_100MIN_RO1_7D,1.0,IDD,0.0,7.0,Addon,100.0,0.0,0.0,0.0,0.0,0.0,0.0,100.0,,Omantel,,,8214,,BTL,,,,active,,,IDD destination: Bangladesh
+8215,IDD,8215,IDD_BTL_Bangla_200MIN_RO2_14D,2.0,IDD,0.0,14.0,Addon,200.0,0.0,0.0,0.0,0.0,0.0,0.0,200.0,,Omantel,,,8215,,BTL,,,,active,,,IDD destination: Bangladesh
+8216,IDD,8216,IDD_BTL_Bangla_600MIN_RO5_28D,5.0,IDD,0.0,28.0,Addon,600.0,0.0,0.0,0.0,0.0,0.0,0.0,600.0,,Omantel,,,8216,,BTL,,,,active,,,IDD destination: Bangladesh
+8376,Combo/Hybrid Offer,8376,NBO_RO2_7GB_25MIN_28D,2.0,COMBO,7168.0,28.0,Master,25.0,0.0,7.0,0.0,0.0,25.0,0.0,0.0,,Omantel,,,8376,,BTL,,,,active,,,
+8377,Combo/Hybrid Offer,8377,NBO_RO3_15GB_50MIN_28D,3.0,COMBO,15360.0,28.0,Master,50.0,0.0,15.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,8377,,BTL,,,,active,,,
+8378,Combo/Hybrid Offer,8378,NBO_RO4_25GB_100MIN_28D,4.0,COMBO,25600.0,28.0,Master,100.0,0.0,25.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,8378,,BTL,,,,active,,,
+8664,Combo/Hybrid Offer,8664,BTL_RO1_500MB_100FLEXMIN_28D,1.0,COMBO,500.0,28.0,Master,100.0,0.0,0.488,0.0,0.0,100.0,0.0,0.0,,Omantel,,,8664,,BTL,,,,active,,,Flexi minutes
+8854,Combo/Hybrid Offer,8854,NBE_Prepaid_RO2_3GB_50MIN_28D,2.0,COMBO,3072.0,28.0,Master,50.0,0.0,3.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,8854,,BTL,,,,active,,,
+8855,Combo/Hybrid Offer,8855,NBE_Prepaid_RO3_6GB_100MIN_28D,3.0,COMBO,6144.0,28.0,Master,100.0,0.0,6.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,8855,,BTL,,,,active,,,
+8856,Combo/Hybrid Offer,8856,NBE_Prepaid_RO4_10GB_150MIN_28D,4.0,COMBO,10240.0,28.0,Master,150.0,0.0,10.0,0.0,0.0,150.0,0.0,0.0,,Omantel,,,8856,,BTL,,,,active,,,
+8857,Combo/Hybrid Offer,8857,NBE_Prepaid_RO5_12GB_200MIN_28D,5.0,COMBO,12288.0,28.0,Master,200.0,0.0,12.0,0.0,0.0,200.0,0.0,0.0,,Omantel,,,8857,,BTL,,,,active,,,
+8858,Combo/Hybrid Offer,8858,NBE_Prepaid_RO6_15GB_300MIN_28D,6.0,COMBO,15360.0,28.0,Master,300.0,0.0,15.0,0.0,0.0,300.0,0.0,0.0,,Omantel,,,8858,,BTL,,,,active,,,
+8860,Combo/Hybrid Offer,8860,NBE_Prepaid_RO8_20GB_400MIN_28D,8.0,COMBO,20480.0,28.0,Master,400.0,0.0,20.0,0.0,0.0,400.0,0.0,0.0,,Omantel,,,8860,,BTL,,,,active,,,
+8861,Combo/Hybrid Offer,8861,NBE_Prepaid_RO12_30GB_500MIN_28D,12.0,COMBO,30720.0,28.0,Master,500.0,0.0,30.0,0.0,0.0,500.0,0.0,0.0,,Omantel,,,8861,,BTL,,,,active,,,
+8862,Combo/Hybrid Offer,8862,NBE_Prepaid_RO16_40GB_1500MIN_28D,16.0,COMBO,40960.0,28.0,Master,1500.0,0.0,40.0,0.0,0.0,1500.0,0.0,0.0,,Omantel,,,8862,,BTL,,,,active,,,
+8863,Combo/Hybrid Offer,8863,NBE_Prepaid_RO24_80GB_2000MIN_28D,24.0,COMBO,81920.0,28.0,Master,2000.0,0.0,80.0,0.0,0.0,2000.0,0.0,0.0,,Omantel,,,8863,,BTL,,,,active,,,
+8889,Combo/Hybrid Offer,8889,NBE_PREPAID_RO1_1Dot5GB_15MIN_28D,1.0,COMBO,1536.0,28.0,Master,15.0,0.0,1.5,0.0,0.0,15.0,0.0,0.0,,Omantel,,,8889,,BTL,,,,active,,,
+9067,Combo/Hybrid Offer,9067,NBE_RO2_7GB_25MIN_28D,2.0,COMBO,7168.0,28.0,Master,25.0,0.0,7.0,0.0,0.0,25.0,0.0,0.0,,Omantel,,,9067,,BTL,,,,active,,,
+9068,Combo/Hybrid Offer,9068,NBE_RO3_15GB_50MIN_28D,3.0,COMBO,15360.0,28.0,Master,50.0,0.0,15.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,9068,,BTL,,,,active,,,
+9069,Combo/Hybrid Offer,9069,NBE_RO4_25GB_100MIN_28D,4.0,COMBO,25600.0,28.0,Master,100.0,0.0,25.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,9069,,BTL,,,,active,,,
+9372,Combo/Hybrid Offer,9372,NBE_RO8_51GB_150MIN_28D,8.0,COMBO,52224.0,28.0,Master,150.0,0.0,51.0,0.0,0.0,150.0,0.0,0.0,,Omantel,,,9372,,BTL,,,,active,,,
+9373,Combo/Hybrid Offer,9373,NBE_RO5_30GB_100MIN_28D,5.0,COMBO,30720.0,28.0,Master,100.0,0.0,30.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,9373,,BTL,,,,active,,,
+9374,Data Offer,9374,KHAREEF_10GB_NIGHT_DATA_2RO_7D,2.0,DATA,10240.0,7.0,Addon,0.0,0.0,10.0,0.0,0.0,0.0,0.0,0.0,,Omantel,,,9374,,BTL,,,,active,,,Night-time data only; Khareef seasonal offer
+9375,Combo/Hybrid Offer,9375,KHAREEF_5GB_50MIN_LOC_1RO_2D,1.0,COMBO,5120.0,2.0,Master,50.0,0.0,5.0,0.0,0.0,50.0,0.0,0.0,,Omantel,,,9375,,BTL,,,,active,,,Local minutes; Khareef seasonal offer
+9433,Combo/Hybrid Offer,9433,Revival_RO2_30GB_100Mn_28Days,2.0,COMBO,30720.0,28.0,Master,100.0,0.0,30.0,0.0,0.0,100.0,0.0,0.0,,Omantel,,,9433,,BTL,,,,active,,,Revival (win-back) offer
+9434,Combo/Hybrid Offer,9434,Revival_RO4_50GB_200Mn_28Days,4.0,COMBO,51200.0,28.0,Master,200.0,0.0,50.0,0.0,0.0,200.0,0.0,0.0,,Omantel,,,9434,,BTL,,,,active,,,Revival (win-back) offer

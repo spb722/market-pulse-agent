@@ -6,6 +6,7 @@ never invoked here. Executive advice uses the existing cached/traced service.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ from market_pulse.llm.langfuse_metrics import flush_langfuse, llm_trace
 from market_pulse.schemas.portfolio import PortfolioSegmentAdvice
 from market_pulse.schemas.runs import STAGE_NAMES, ReportJob, utcnow
 from market_pulse.services.gap_analysis_service import clean_text, find_plan
+from market_pulse.services.narrative_service import report_key
 from market_pulse.services.portfolio_analysis_service import build_portfolio_analysis
 from market_pulse.storage.file_repository import FileRunRepository
 
@@ -93,16 +95,27 @@ def _stage_result(
     return result.result
 
 
-def _omantel_plans(run_id: str, repo: FileRunRepository) -> list[dict]:
-    stage = repo.get_omantel_stage_result(run_id)
+def _omantel_plans(
+    run_id: str, repo: FileRunRepository, offer_scope: str = "ATL"
+) -> list[dict]:
+    if offer_scope == "ATL":
+        # Keep the pre-BTL call shape for the default scope.
+        stage = repo.get_omantel_stage_result(run_id)
+    else:
+        stage = repo.get_omantel_stage_result(run_id, offer_scope)
     if stage is None or stage.status != "COMPLETED" or stage.result is None:
-        raise ValueError("Omantel reference is not ready for reporting.")
+        raise ValueError(f"Omantel {offer_scope} reference is not ready for reporting.")
     result = stage.result
     return result[0] if isinstance(result, list) else result.get("enriched_plans", [])
 
 
-def _omantel_count(run_id: str, repo: FileRunRepository) -> int:
-    return len(_omantel_plans(run_id, repo))
+def _omantel_count(run_id: str, repo: FileRunRepository, offer_scope: str = "ATL") -> int:
+    return len(_omantel_plans(run_id, repo, offer_scope))
+
+
+def _scope_of(spec: tuple) -> str:
+    """Offer scope of a run spec; 3-tuples (legacy/CLI) are ATL."""
+    return spec[3] if len(spec) > 3 and spec[3] else "ATL"
 
 
 def _extra_benefits(plans: list[dict], plan_id: Any, plan_name: Any) -> str | None:
@@ -127,8 +140,15 @@ def _count_by(items: list[dict], key: str) -> dict[str, int]:
 
 def discover_run_specs(
     run_id: str, repo: FileRunRepository | None = None
-) -> list[tuple[str, str, str]]:
-    """Validate all saved inputs and discover the completed competitors."""
+) -> list[tuple[str, str, str, str]]:
+    """Validate all saved inputs and select the competitors to report on.
+
+    Rule: the latest COMPLETED submission per (competitor name, offer scope).
+    Older submissions in the group are ignored (they stay stored). Any
+    CREATED/PROCESSING submission in a group, or a group without a COMPLETED
+    submission, is an error. Only the Omantel references for scopes present
+    among the selected competitors are required.
+    """
     if not re.fullmatch(r"RUN-[A-Za-z0-9_-]+", run_id):
         raise ValueError("Invalid run ID.")
     repo = repo or FileRunRepository(get_settings().runs_dir)
@@ -137,23 +157,59 @@ def discover_run_specs(
     competitors = repo.list_competitor_runs(run_id)
     if not competitors:
         raise ValueError(f"Run {run_id!r} has no completed competitors.")
-    unfinished = [cr.competitor_run_id for cr in competitors if cr.status != "COMPLETED"]
-    if unfinished:
-        raise ValueError("Unfinished competitor runs: " + ", ".join(unfinished))
-    _omantel_count(run_id, repo)
+
+    groups: dict[tuple[str, str], list] = {}
     for cr in competitors:
+        groups.setdefault((cr.competitor.lower().strip(), cr.offer_scope), []).append(cr)
+
+    unfinished = [
+        cr.competitor_run_id
+        for group in groups.values()
+        for cr in group
+        if cr.status in ("CREATED", "PROCESSING")
+    ]
+    if unfinished:
+        raise ValueError("Unfinished competitor runs: " + ", ".join(sorted(unfinished)))
+
+    selected = []
+    no_completed = []
+    for group in groups.values():
+        completed = [cr for cr in group if cr.status == "COMPLETED"]
+        if not completed:
+            no_completed.extend(cr.competitor_run_id for cr in group)
+            continue
+        selected.append(max(completed, key=lambda cr: (cr.created_at, cr.competitor_run_id)))
+    if no_completed:
+        raise ValueError(
+            "No completed submission for competitor runs: " + ", ".join(sorted(no_completed))
+        )
+
+    for scope in sorted({cr.offer_scope for cr in selected}):
+        _omantel_count(run_id, repo, scope)
+    for cr in selected:
         for stage in STAGE_NAMES:
             _stage_result(run_id, cr.competitor_run_id, stage, repo)
     return sorted(
-        [(run_id, cr.competitor_run_id, cr.competitor.title()) for cr in competitors],
-        key=lambda spec: (spec[2].lower(), spec[1]),
+        [
+            (run_id, cr.competitor_run_id, cr.competitor.title(), cr.offer_scope)
+            for cr in selected
+        ],
+        key=lambda spec: (spec[2].lower(), spec[3], spec[1]),
     )
 
 
-def _map_record(raw: dict[str, Any], competitor: str) -> dict[str, Any]:
+def _map_record(
+    raw: dict[str, Any],
+    competitor: str,
+    *,
+    performance_window_months: int | None = None,
+) -> dict[str, Any]:
     record = {"competitor": competitor}
     for src_key, dst_key in RECORD_FIELD_MAP.items():
         record[dst_key] = raw.get(src_key)
+    record["offer_scope"] = raw.get("offer_scope") or "ATL"
+    record["omantel_offer_scope"] = raw.get("omantel_offer_scope") or "ATL"
+    record["performance_window_months"] = performance_window_months
     record["metric_gaps"] = {
         metric.lower(): {
             "competitor": raw.get(f"{metric} Competitor"),
@@ -170,12 +226,43 @@ def _map_no_match(raw: dict[str, Any], competitor: str) -> dict[str, Any]:
     record = {"competitor": competitor}
     for src_key, dst_key in NO_MATCH_FIELD_MAP.items():
         record[dst_key] = raw.get(src_key)
+    record["offer_scope"] = raw.get("offer_scope") or "ATL"
     return record
 
 
+def _performance_window(
+    raw: dict[str, Any], risk_windows: dict[tuple, Any], offer_scope: str
+) -> int | None:
+    """Window from the narrative record, else the matching risk record; old runs: 6 (ATL)."""
+    value = raw.get("performance_window_months")
+    if value is None:
+        value = risk_windows.get(report_key(_snake_key_view(raw)))
+    if value is None and offer_scope == "ATL":
+        return 6
+    return value
+
+
+def _snake_key_view(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "competitor_plan_id": raw.get("Competitor Plan ID"),
+        "competitor_plan": raw.get("Competitor Plan"),
+        "omantel_plan_id": raw.get("Omantel Plan ID"),
+        "omantel_plan": raw.get("Omantel Plan"),
+    }
+
+
 def build_competitor_dataset(
-    run_id: str, competitor_run_id: str, name: str, *, repo: FileRunRepository
+    run_id: str,
+    competitor_run_id: str,
+    name: str,
+    *,
+    repo: FileRunRepository,
+    offer_scope: str = "ATL",
+    label: str | None = None,
 ) -> tuple[dict, list[dict], list[dict]]:
+    """``name`` is the base competitor name; ``label`` (default ``name``) is the
+    display name used for ``name``/``competitor`` fields."""
+    label = label or name
     comp_norm = _stage_result(run_id, competitor_run_id, "competitor_normalization", repo)
     matching = _stage_result(run_id, competitor_run_id, "plan_matching", repo)
     gap = _stage_result(run_id, competitor_run_id, "gap_analysis", repo)
@@ -194,8 +281,21 @@ def build_competitor_dataset(
     ]
     risk_scores = [r["risk_score"] for r in scored if r.get("risk_score") is not None]
 
-    records = [_map_record(r, name) for r in narrative["records"]]
-    omantel_plans = _omantel_plans(run_id, repo)
+    risk_windows = {
+        report_key(r): r.get("performance_window_months")
+        for r in risk
+        if r.get("performance_window_months") is not None
+    }
+    records = [
+        _map_record(
+            r, label,
+            performance_window_months=_performance_window(
+                r, risk_windows, r.get("offer_scope") or "ATL"
+            ),
+        )
+        for r in narrative["records"]
+    ]
+    omantel_plans = _omantel_plans(run_id, repo, offer_scope)
     for record in records:
         record["competitor_extra_benefits"] = _extra_benefits(
             enriched_plans, record["competitor_plan_id"], record["competitor_plan"]
@@ -203,10 +303,12 @@ def build_competitor_dataset(
         record["omantel_extra_benefits"] = _extra_benefits(
             omantel_plans, record["omantel_plan_id"], record["omantel_plan"]
         )
-    no_match = [_map_no_match(r, name) for r in narrative["no_match_report"]]
+    no_match = [_map_no_match(r, label) for r in narrative["no_match_report"]]
 
     summary = {
-        "name": name,
+        "name": label,
+        "label": label,
+        "offer_scope": offer_scope,
         "run_id": run_id,
         "competitor_run_id": competitor_run_id,
         "total_plans": len(enriched_plans),
@@ -235,30 +337,97 @@ def build_competitor_dataset(
     return summary, records, no_match
 
 
+def _load_btl_free_offers(settings: Settings) -> list[dict[str, Any]]:
+    """Informational Omantel BTL free offers (D10). Never scored; missing file -> []."""
+    offers_path = Path(settings.omantel_btl_free_offers_csv_path)
+    perf_path = Path(settings.omantel_btl_free_offers_performance_csv_path)
+    if not offers_path.is_absolute():
+        offers_path = REPO_ROOT / offers_path
+    if not perf_path.is_absolute():
+        perf_path = REPO_ROOT / perf_path
+    if not offers_path.exists():
+        logger.warning("BTL free offers file not found: %s", offers_path)
+        return []
+
+    def _num(value: Any) -> float | None:
+        try:
+            return None if value in (None, "") else float(value)
+        except (TypeError, ValueError):
+            return None
+
+    months: dict[str, dict[str, float]] = {}
+    if perf_path.exists():
+        with perf_path.open(newline="", encoding="utf-8-sig") as handle:
+            for row in csv.DictReader(handle):
+                customers = _num(row.get("unique_customers"))
+                month = (row.get("month") or "").strip()
+                pid = str(row.get("product_id") or "").strip()
+                if pid and month and customers is not None:
+                    months.setdefault(pid, {})[month] = customers
+    else:
+        logger.warning("BTL free offers performance file not found: %s", perf_path)
+
+    offers = []
+    with offers_path.open(newline="", encoding="utf-8-sig") as handle:
+        for row in csv.DictReader(handle):
+            pid = str(row.get("product_id") or "").strip()
+            by_month = months.get(pid, {})
+            offers.append({
+                "product_id": pid,
+                "product_name": row.get("product_name"),
+                "product_type": row.get("product_type"),
+                "data_gb": _num(row.get("data")),
+                "minutes": _num(row.get("units_minutes")),
+                "validity_days": _num(row.get("validity_in_days")),
+                "avg_unique_customers": (
+                    round(statistics.mean(by_month.values()), 2) if by_month else None
+                ),
+                "months": sorted(by_month),
+            })
+    return offers
+
+
 def build_report_dataset(
-    run_specs: list[tuple[str, str, str]],
+    run_specs: list[tuple],
     *,
     analysis_run_id: str,
     advisor: Callable[[dict[str, Any]], PortfolioSegmentAdvice] | None = None,
     settings: Settings | None = None,
     repo: FileRunRepository | None = None,
 ) -> dict[str, Any]:
-    """Assemble deterministic report data and run-level executive advice."""
+    """Assemble deterministic report data and run-level executive advice.
+
+    Spec tuples are ``(run_id, competitor_run_id, name[, offer_scope])``; a
+    missing scope means ATL. ``omantel_atl_products`` is None when the report
+    has no ATL competitor.
+    """
 
     settings = settings or get_settings()
     repo = repo or FileRunRepository(settings.runs_dir)
     competitors = []
     all_records: list[dict] = []
     all_no_match: list[dict] = []
-    omantel_products = None
+    omantel_products: int | None = None
+    omantel_btl_products: int | None = None
+    has_btl = any(_scope_of(spec) == "BTL" for spec in run_specs)
 
-    for run_id, competitor_run_id, name in run_specs:
-        summary, records, no_match = build_competitor_dataset(run_id, competitor_run_id, name, repo=repo)
+    for spec in run_specs:
+        run_id, competitor_run_id, name = spec[0], spec[1], spec[2]
+        scope = _scope_of(spec)
+        label = f"{name} · {scope}" if has_btl else name
+        summary, records, no_match = build_competitor_dataset(
+            run_id, competitor_run_id, name, repo=repo, offer_scope=scope, label=label
+        )
         competitors.append(summary)
         all_records.extend(records)
         all_no_match.extend(no_match)
-        count = _omantel_count(run_id, repo)
-        omantel_products = count if omantel_products is None else max(omantel_products, count)
+        count = _omantel_count(run_id, repo, scope)
+        if scope == "BTL":
+            omantel_btl_products = (
+                count if omantel_btl_products is None else max(omantel_btl_products, count)
+            )
+        else:
+            omantel_products = count if omantel_products is None else max(omantel_products, count)
 
     portfolio_kwargs: dict[str, Any] = {}
     if advisor is not None:
@@ -271,19 +440,23 @@ def build_report_dataset(
         **portfolio_kwargs,
     )
 
-    return {
+    dataset = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "run_id": analysis_run_id,
         "omantel_atl_products": omantel_products,
+        "omantel_btl_products": omantel_btl_products if has_btl else None,
         "competitors": competitors,
         "portfolio_analysis": portfolio_analysis,
         "records": all_records,
         "no_match": all_no_match,
     }
+    if has_btl:
+        dataset["btl_free_offers"] = _load_btl_free_offers(settings)
+    return dataset
 
 
 def write_business_report(
-    run_specs: list[tuple[str, str, str]],
+    run_specs: list[tuple],
     *,
     analysis_run_id: str,
     repo: FileRunRepository,

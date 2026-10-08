@@ -8,7 +8,7 @@ here. Only the competitor-submission request body is API-specific.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, model_validator
 
@@ -30,6 +30,7 @@ class CompetitorSubmitRequest(BaseModel):
     competitor: str
     data: Optional[dict] = None
     data_path: Optional[dict] = None
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
 
     @model_validator(mode="after")
     def _require_one_input_source(self) -> "CompetitorSubmitRequest":

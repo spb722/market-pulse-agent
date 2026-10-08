@@ -296,6 +296,7 @@ def llm_trace(
     run_id: str,
     competitor_run_id: str | None = None,
     competitor: str | None = None,
+    offer_scope: str | None = None,
 ) -> Iterator[LLMUsageTotals]:
     """Group the LLM generations of one unit of work into one Langfuse trace.
 
@@ -322,6 +323,9 @@ def llm_trace(
         if competitor:
             attributes["competitor"] = _ascii_attribute(competitor)
             tags.append(f"competitor:{competitor}")
+        if offer_scope:
+            attributes["offer_scope"] = _ascii_attribute(offer_scope)
+            tags.append(f"offer_scope:{offer_scope}")
 
         context_token = otel_context.attach(otel_context.Context())
         stack = ExitStack()

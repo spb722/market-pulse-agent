@@ -104,6 +104,8 @@ class NarrativeReportRecord(BaseModel):
     risk_level: Optional[str] = Field(default=None, alias="Risk Level")
     risk_status: Optional[str] = Field(default=None, alias="Risk Status")
     risk_reasons: Optional[str] = Field(default=None, alias="Risk Reasons")
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
+    omantel_offer_scope: Literal["ATL", "BTL"] = "ATL"
 
     # Added by generate_narrative_report; None/absent for non-eligible rows.
     gap_summary: Optional[str] = None
@@ -131,6 +133,8 @@ class NoMatchReportRecord(BaseModel):
     match_confidence: Optional[float] = Field(default=None, alias="Match Confidence")
     match_status: Optional[str] = Field(default=None, alias="Match Status")
     reason: Optional[str] = Field(default=None, alias="Reason")
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
+    omantel_offer_scope: Literal["ATL", "BTL"] = "ATL"
 
 
 class ExecutiveSummary(BaseModel):

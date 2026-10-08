@@ -230,6 +230,7 @@ def score_relative_to_max(values: Sequence[Any]) -> list[float]:
 def aggregate_performance_records(
     performance_records: Sequence[Union[ProductPerformanceRecord, dict]],
     config: Optional[RiskAnalysisConfig] = None,
+    window_months: Optional[int] = None,
 ) -> tuple[dict[tuple[str, str], dict[str, Any]], Optional[date]]:
     """Aggregate raw performance records into a ``performance_lookup`` dict.
 
@@ -244,6 +245,9 @@ def aggregate_performance_records(
     """
 
     config = config or get_risk_analysis_config()
+
+    if window_months is None:
+        window_months = config.performance_window_months.for_scope("ATL")
 
     records = _coerce_records(performance_records)
 
@@ -266,7 +270,9 @@ def aggregate_performance_records(
 
     latest_month = max(record.month for record, _ in enriched)
 
-    six_month_start = _shift_months(latest_month, -5)
+    # The window start is relative to the latest month in the dataset passed
+    # in (ATL: 6 months -> latest - 5; BTL: 3 months -> latest - 2).
+    six_month_start = _shift_months(latest_month, -(window_months - 1))
 
     windowed = [
         (record, revenue)
@@ -420,6 +426,7 @@ def analyze_step5_record(
     performance_lookup: dict[tuple[str, str], dict[str, Any]],
     latest_month: Optional[date],
     config: Optional[RiskAnalysisConfig] = None,
+    window_months: Optional[int] = None,
 ) -> dict[str, Any]:
     """Analyze the risk for a single Step 4 matched-pair record.
 
@@ -428,6 +435,9 @@ def analyze_step5_record(
     """
 
     config = config or get_risk_analysis_config()
+
+    if window_months is None:
+        window_months = config.performance_window_months.for_scope("ATL")
 
     result: dict[str, Any] = {
         "competitor_plan_id": step4_item.get("competitor_plan_id"),
@@ -470,8 +480,8 @@ def analyze_step5_record(
 
     months_used = int(exposure.get("months_used", 0))
 
-    # We agreed to use 6 months
-    if months_used < 6:
+    # The full window must be available (ATL: 6 months, BTL: 3 months).
+    if months_used < window_months:
         result.update(
             {
                 "risk_status": "REVIEW_REQUIRED",
@@ -547,6 +557,7 @@ def analyze_step5_records(
     step4_results: list[dict[str, Any]],
     performance_records: Sequence[Union[ProductPerformanceRecord, dict]],
     config: Optional[RiskAnalysisConfig] = None,
+    offer_scope: str = "ATL",
 ) -> list[dict[str, Any]]:
     """Analyze a batch of Step 4 matched-pair records for competitive risk.
 
@@ -563,8 +574,10 @@ def analyze_step5_records(
 
     config = config or get_risk_analysis_config()
 
+    window_months = config.performance_window_months.for_scope(offer_scope)
+
     performance_lookup, latest_month = aggregate_performance_records(
-        performance_records, config=config
+        performance_records, config=config, window_months=window_months
     )
 
     results: list[dict[str, Any]] = []
@@ -578,7 +591,13 @@ def analyze_step5_records(
         )
 
         try:
-            result = analyze_step5_record(item, performance_lookup, latest_month, config=config)
+            result = analyze_step5_record(
+                item,
+                performance_lookup,
+                latest_month,
+                config=config,
+                window_months=window_months,
+            )
 
         except Exception as exc:  # noqa: BLE001 - intentional isolation boundary
             plan_name = item.get("competitor_plan")
@@ -591,6 +610,10 @@ def analyze_step5_records(
                 "risk_status": "PROCESSING_ERROR",
                 "error": str(exc),
             }
+
+        result["offer_scope"] = offer_scope
+        result["omantel_offer_scope"] = offer_scope
+        result["performance_window_months"] = window_months
 
         results.append(result)
 

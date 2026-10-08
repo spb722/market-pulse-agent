@@ -304,6 +304,24 @@ def test_llm_trace_groups_generations_under_run_session_and_competitor(monkeypat
     assert root_span.updates == [{"metadata": {**attributes, **totals.as_dict()}}]
 
 
+def test_llm_trace_adds_offer_scope_metadata_and_tag(monkeypatch, propagated):
+    client = FakeLangfuse()
+    monkeypatch.setattr(langfuse_metrics, "_get_client", lambda settings: client)
+
+    with llm_trace(
+        name="competitor_run",
+        settings=_enabled_settings(),
+        run_id="RUN-1",
+        competitor_run_id="CR-1",
+        offer_scope="BTL",
+    ):
+        pass
+
+    assert propagated[0]["metadata"]["offer_scope"] == "BTL"
+    assert propagated[0]["tags"] == ["run:RUN-1", "competitor_run:CR-1", "offer_scope:BTL"]
+    assert client.observations[0]["metadata"]["offer_scope"] == "BTL"
+
+
 def test_nested_llm_trace_keeps_its_usage_out_of_the_outer_trace(monkeypatch, propagated):
     client = FakeLangfuse()
     monkeypatch.setattr(langfuse_metrics, "_get_client", lambda settings: client)

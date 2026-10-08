@@ -237,6 +237,7 @@
   .ai-label { color: var(--text-muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; }
   .decision-badge { margin-bottom: 7px; }
   #portfolio-summary { margin-bottom: 12px; }
+  .scope-heading { background: var(--page-plane); color: var(--text-secondary); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 8px 10px; }
 
   footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px; line-height: 1.6; }
 </style>
@@ -475,6 +476,26 @@ function el(tag, props, children) {
 function text(t) { return document.createTextNode(t === null || t === undefined ? '' : String(t)); }
 
 // ---------------------------------------------------------------------------
+// Offer scope (ATL / BTL). Every BTL-specific UI element is gated on HAS_BTL so
+// ATL-only (and pre-BTL) datasets render exactly as before.
+// ---------------------------------------------------------------------------
+const HAS_BTL = (DATA.competitors || []).some((c) => c.offer_scope === 'BTL');
+function scopeOf(x) { return (x && x.offer_scope) === 'BTL' ? 'BTL' : 'ATL'; }
+function windowLabel(r) {
+  const n = r.performance_window_months;
+  if (n === null || n === undefined) return scopeOf(r) === 'BTL' ? '—' : '6-month';
+  return `${n}-month`;
+}
+function segmentLabel(key) {
+  // "btl:prepaid:DATA" -> "BTL · prepaid DATA"; "prepaid:DATA" -> "prepaid DATA"
+  const parts = String(key || '').split(':');
+  if (parts[0] === 'btl') return 'BTL · ' + parts.slice(1).join(' ');
+  return parts.join(' ');
+}
+function inScope(x) { return !HAS_BTL || !filters.scope || scopeOf(x) === filters.scope; }
+function scopedCompetitors() { return DATA.competitors.filter(inScope); }
+
+// ---------------------------------------------------------------------------
 // Tooltip
 // ---------------------------------------------------------------------------
 const tooltipEl = document.getElementById('chart-tooltip');
@@ -562,7 +583,9 @@ function renderGroupedBarChart(svgId, groups, opts) {
     const lbl = mk('text');
     lbl.setAttribute('x', groupCenter); lbl.setAttribute('y', height - padBottom + 16);
     lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('class', 'axis-label');
-    lbl.textContent = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label;
+    const scopeSuffix = HAS_BTL ? /^(.*)( · (?:ATL|BTL))$/.exec(g.label) : null;
+    if (scopeSuffix) lbl.textContent = scopeSuffix[1].length > 8 ? scopeSuffix[1].slice(0, 7) + '…' + scopeSuffix[2] : g.label;
+    else lbl.textContent = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label;
     svg.appendChild(lbl);
   });
 
@@ -605,16 +628,22 @@ document.querySelectorAll('.table-view-toggle').forEach((btn) => {
 // ---------------------------------------------------------------------------
 // Filters
 // ---------------------------------------------------------------------------
-const filters = { competitor: '', category: '', risk: '', search: '' };
+const filters = { competitor: '', category: '', risk: '', search: '', scope: '' };
 
 function populateCompetitorFilter() {
   const sel = document.getElementById('f-competitor');
-  DATA.competitors.forEach((c) => sel.appendChild(el('option', { value: c.name }, [text(c.name)])));
+  if (HAS_BTL) {
+    sel.innerHTML = '';
+    sel.appendChild(el('option', { value: '' }, [text('All')]));
+  }
+  scopedCompetitors().forEach((c) => sel.appendChild(el('option', { value: c.name }, [text(c.name)])));
+  if (HAS_BTL) sel.value = filters.competitor;
 }
 
 function applyFilters(records) {
   return records.filter((r) => {
     if (filters.competitor && r.competitor !== filters.competitor) return false;
+    if (!inScope(r)) return false;
     if (filters.category && r.category !== filters.category) return false;
     if (filters.risk) {
       const level = r.risk_level || 'NOT_SCORED';
@@ -635,8 +664,9 @@ function renderKpis(filteredRecords) {
   const container = document.getElementById('kpi-row');
   container.innerHTML = '';
 
-  const scopedCompetitors = filters.competitor ? DATA.competitors.filter((c) => c.name === filters.competitor) : DATA.competitors;
-  const totalPlans = scopedCompetitors.reduce((s, c) => s + c.total_plans, 0);
+  const baseCompetitors = HAS_BTL ? scopedCompetitors() : DATA.competitors;
+  const scopedComps = filters.competitor ? baseCompetitors.filter((c) => c.name === filters.competitor) : baseCompetitors;
+  const totalPlans = scopedComps.reduce((s, c) => s + c.total_plans, 0);
   const totalMatched = filteredRecords.filter((r) => r.gap_analysis_status === 'ANALYZED').length;
   const totalScored = filteredRecords.filter((r) => r.risk_status === 'SCORED').length;
   const high = filteredRecords.filter((r) => r.risk_level === 'HIGH').length;
@@ -644,14 +674,21 @@ function renderKpis(filteredRecords) {
   const low = filteredRecords.filter((r) => r.risk_level === 'LOW').length;
 
   const tiles = [
-    { label: 'Competitor plans scraped', value: fmtNum(totalPlans, 0), sub: (filters.competitor || DATA.competitors.map((c) => c.name).join(' + ')) },
-    { label: 'Omantel catalog (ATL products)', value: fmtNum(DATA.omantel_atl_products, 0), sub: 'Shared reference for this cycle' },
+    { label: 'Competitor plans scraped', value: fmtNum(totalPlans, 0), sub: (filters.competitor || baseCompetitors.map((c) => c.name).join(' + ')) },
+    { label: 'Omantel catalog (ATL products)', value: fmtNum(DATA.omantel_atl_products, 0), sub: 'Shared reference for this cycle', only: 'ATL' },
+    { label: 'Omantel catalog (BTL products)', value: fmtNum(DATA.omantel_btl_products, 0), sub: 'Targeted offers; shared reference for this cycle', only: 'BTL' },
     { label: 'Comparable matches found', value: fmtNum(totalMatched, 0) + ' / ' + fmtNum(filteredRecords.length, 0), sub: pct(totalMatched, filteredRecords.length) + '% of scoped plans' },
     { label: 'Risk-scored plans', value: fmtNum(totalScored, 0), sub: 'Have real usage/ARPU data' },
     { label: 'High / Medium / Low risk', value: `${high} / ${medium} / ${low}`, sub: 'Of risk-scored plans', statusClass: high > 0 ? 'status-critical' : (medium > 0 ? 'status-warning' : 'status-good') },
   ];
 
-  tiles.forEach((t) => {
+  tiles.filter((t) => {
+    if (!t.only) return true;
+    if (!HAS_BTL) return t.only === 'ATL';
+    if (filters.scope && filters.scope !== t.only) return false;
+    const count = t.only === 'ATL' ? DATA.omantel_atl_products : DATA.omantel_btl_products;
+    return count !== null && count !== undefined;
+  }).forEach((t) => {
     container.appendChild(el('div', { class: 'card stat-tile' + (t.statusClass ? ' ' + t.statusClass : '') }, [
       el('div', { class: 'stat-label' }, [text(t.label)]),
       el('div', { class: 'stat-value' }, [text(t.value)]),
@@ -671,24 +708,44 @@ function renderExecutiveDecisions() {
   head.innerHTML = '';
   body.innerHTML = '';
 
-  summary.textContent = `${analysis.affected_omantel_plans || 0} Omantel plans have positive calculated risk across ${analysis.risky_segments || 0} product segments, based on ${analysis.positive_risk_comparisons || 0} competitor comparisons.`;
+  const allRows = analysis.rows || [];
+  // Priority order is global; with BTL present, list the ATL portfolio first and
+  // then the BTL portfolio (stable within each scope).
+  const rows = HAS_BTL
+    ? [...allRows.filter((r) => inScope(r) && scopeOf(r) === 'ATL'), ...allRows.filter((r) => inScope(r) && scopeOf(r) === 'BTL')]
+    : allRows;
+  const compCols = HAS_BTL ? scopedCompetitors() : DATA.competitors;
+  if (HAS_BTL && filters.scope) {
+    const segs = new Set(rows.map((row) => row.segment_key || `${row.category}:${row.product_type}`));
+    const comparisons = rows.reduce((n, row) => n + (row.comparisons || []).length, 0);
+    summary.textContent = `${rows.length} Omantel ${filters.scope} plans have positive calculated risk across ${segs.size} product segments, based on ${comparisons} competitor comparisons.`;
+  } else {
+    summary.textContent = `${analysis.affected_omantel_plans || 0} Omantel plans have positive calculated risk across ${analysis.risky_segments || 0} product segments, based on ${analysis.positive_risk_comparisons || 0} competitor comparisons.`;
+  }
 
-  const headers = ['Priority', 'Segment', 'Omantel pack', ...DATA.competitors.map((c) => c.name), 'Market risk', 'Why it matters', 'Suggested action'];
+  const headers = ['Priority', 'Segment', 'Omantel pack', ...compCols.map((c) => c.name), 'Market risk', 'Why it matters', 'Suggested action'];
   head.appendChild(el('tr', {}, headers.map((header) => el('th', {}, [text(header)]))));
 
-  if (!analysis.rows || analysis.rows.length === 0) {
+  if (rows.length === 0) {
     body.appendChild(el('tr', {}, [
       el('td', { colspan: String(headers.length), class: 'empty-state' }, [text('No scored comparisons exceed the configured risk threshold.')]),
     ]));
     return;
   }
 
-  analysis.rows.forEach((row) => {
+  let lastScope = null;
+  rows.forEach((row) => {
+    if (HAS_BTL && scopeOf(row) !== lastScope) {
+      lastScope = scopeOf(row);
+      body.appendChild(el('tr', { class: 'scope-heading-row' }, [
+        el('td', { colspan: String(headers.length), class: 'scope-heading' }, [text(lastScope === 'BTL' ? 'BTL portfolio' : 'ATL portfolio')]),
+      ]));
+    }
     const cells = [
       el('td', { class: 'priority-cell' }, [text(row.priority)]),
       el('td', { class: 'segment-label' }, [
         el('div', { class: 'plan-name' }, [text(row.category)]),
-        el('div', { class: 'comparison-meta' }, [text(row.product_type)]),
+        el('div', { class: 'comparison-meta' }, [text(HAS_BTL ? `${scopeOf(row)} · ${row.product_type}` : row.product_type)]),
       ]),
       el('td', {}, [
         el('div', { class: 'plan-name' }, [text(row.omantel_plan)]),
@@ -696,10 +753,12 @@ function renderExecutiveDecisions() {
       ]),
     ];
 
-    DATA.competitors.forEach((competitor) => {
+    compCols.forEach((competitor) => {
       const stack = el('div', { class: 'comparison-stack' }, []);
       const comparisons = (row.comparisons || []).filter((item) => item.competitor === competitor.name);
-      if (comparisons.length === 0) {
+      if (HAS_BTL && scopeOf(competitor) !== scopeOf(row)) {
+        stack.appendChild(el('div', { class: 'comparison-meta' }, [text('—')]));
+      } else if (comparisons.length === 0) {
         stack.appendChild(el('div', { class: 'comparison-meta' }, [text('No affected comparison')]));
       } else {
         comparisons.forEach((item) => {
@@ -745,6 +804,45 @@ function renderExecutiveDecisions() {
 // ---------------------------------------------------------------------------
 // Competitor comparison section (always all competitors, unaffected by filters)
 // ---------------------------------------------------------------------------
+// BTL-aware bottom line: ATL and BTL risk scores are relative to different
+// usage bases (D15), so competitors are only ever compared within their own
+// scope. Names are inserted as text nodes.
+function renderScopedBottomLine(comps) {
+  const callout = document.getElementById('comparison-callout');
+  callout.innerHTML = '';
+  callout.appendChild(el('span', { class: 'callout-label' }, [text('Bottom line')]));
+  ['ATL', 'BTL'].forEach((scope) => {
+    const group = comps.filter((c) => scopeOf(c) === scope);
+    if (group.length === 0) return;
+    const strong = (t) => el('strong', {}, [text(t)]);
+    const para = el('div', { class: 'scope-bottom-line', style: 'margin-top:8px;' }, [strong(scope + ': ')]);
+    const add = (...nodes) => nodes.forEach((n) => para.appendChild(typeof n === 'string' ? text(n) : n));
+    if (group.length === 1) {
+      const c = group[0];
+      add(strong(c.name), ` — average risk score `, strong(fmtNum(c.avg_risk_score)), `, peak `, strong(fmtNum(c.max_risk_score)), `; no other ${scope} competitor to compare.`);
+    } else {
+      const byRisk = [...group].sort((a, b) => (b.avg_risk_score || 0) - (a.avg_risk_score || 0));
+      const higher = byRisk[0], lower = byRisk[1];
+      if (higher.avg_risk_score !== lower.avg_risk_score) {
+        add(strong(higher.name), ' carries the higher realized business risk right now — average risk score ', strong(fmtNum(higher.avg_risk_score)), ' vs. ', strong(lower.name), "'s ", strong(fmtNum(lower.avg_risk_score)), ', with a peak of ', strong(fmtNum(higher.max_risk_score)), ' on its worst single plan. ');
+      } else {
+        add(group.map((c) => c.name).join(' and ') + ' currently carry similar realized risk. ');
+      }
+      const worstGap = [...group].sort((a, b) => (a.min_commercial_position_score || 0) - (b.min_commercial_position_score || 0))[0];
+      if (worstGap && worstGap.name !== higher.name) {
+        add('Note: ', strong(worstGap.name), ` actually has the steeper raw commercial disadvantage on its worst plan (${fmtNum(worstGap.min_commercial_position_score)} points), but that gap sits on lower-exposure Omantel products, so it doesn't translate into the highest risk score today — worth reviewing in its own right.`);
+      }
+    }
+    callout.appendChild(para);
+  });
+  ['chart-risk-score-card', 'chart-risk-level-card'].forEach((id) => {
+    const card = document.getElementById(id);
+    if (card.querySelector('.scope-scale-caption')) return;
+    card.querySelector('figcaption').insertAdjacentElement('afterend', el('div', { class: 'scope-scale-caption comparison-meta' }, [
+      text('ATL and BTL bars are on different relative scales; compare bars only within the same offer scope.')]));
+  });
+}
+
 function renderComparison() {
   const comps = DATA.competitors;
 
@@ -768,6 +866,9 @@ function renderComparison() {
   })), { decimals: 0 });
   renderTableView('tv-risk-level', ['Competitor', 'Low', 'Medium', 'High'], comps.map((c) => [c.name, (c.risk_level_counts||{}).LOW||0, (c.risk_level_counts||{}).MEDIUM||0, (c.risk_level_counts||{}).HIGH||0]));
 
+  if (HAS_BTL) {
+    renderScopedBottomLine(comps);
+  } else {
   // Headline callout — computed from real numbers, not hardcoded.
   const byRisk = [...comps].sort((a, b) => (b.avg_risk_score || 0) - (a.avg_risk_score || 0));
   const higher = byRisk[0], lower = byRisk[1];
@@ -784,6 +885,15 @@ function renderComparison() {
     calloutHtml += `Note: <strong>${worstGap.name}</strong> actually has the steeper raw commercial disadvantage on its worst plan (${fmtNum(worstGap.min_commercial_position_score)} points), but that gap sits on lower-exposure Omantel products, so it doesn't translate into the highest risk score today — worth reviewing in its own right.`;
   }
   document.getElementById('comparison-callout').innerHTML = calloutHtml;
+  }
+  if (HAS_BTL) {
+    let note = document.getElementById('scope-comparability-note');
+    if (!note) {
+      note = el('p', { class: 'section-sub', id: 'scope-comparability-note', style: 'margin-top:10px;' }, []);
+      document.getElementById('calibration-note').insertAdjacentElement('afterend', note);
+    }
+    note.textContent = 'ATL and BTL risk scores are each relative to the largest product in their own usage data (ATL: 6-month, BTL: 3-month window) and are not directly comparable in absolute size.';
+  }
 
   const allLow = comps.every((c) => ((c.risk_level_counts||{}).MEDIUM||0) === 0 && ((c.risk_level_counts||{}).HIGH||0) === 0);
   document.getElementById('calibration-note').textContent = allLow
@@ -795,7 +905,7 @@ function renderComparison() {
 // Breakdown charts (category, product type) — grouped by competitor
 // ---------------------------------------------------------------------------
 function renderBreakdowns() {
-  const comps = DATA.competitors;
+  const comps = HAS_BTL ? scopedCompetitors() : DATA.competitors;
 
   renderLegend('legend-category', comps.map((c) => ({ label: c.name, color: competitorColor(c.name) })));
   renderGroupedBarChart('chart-category', ['prepaid', 'postpaid'].map((cat) => ({
@@ -814,7 +924,7 @@ function renderBreakdowns() {
 }
 
 function renderMatching() {
-  const comps = DATA.competitors;
+  const comps = HAS_BTL ? scopedCompetitors() : DATA.competitors;
   const statuses = ['MATCHED', 'NO_GOOD_MATCH', 'NO_DIRECT_MATCH'];
   const statusLabels = { MATCHED: 'Matched', NO_GOOD_MATCH: 'No good match', NO_DIRECT_MATCH: 'No direct match' };
   renderLegend('legend-match', statuses.map((s) => ({ label: statusLabels[s], color: STATUS_COLOR[MATCH_STATUS_KEY[s]] })));
@@ -861,7 +971,7 @@ function renderMainTable(filteredRecords) {
   const sorted = sortRecords(filteredRecords);
 
   if (sorted.length === 0) {
-    tbody.appendChild(el('tr', {}, [el('td', { colspan: '9', class: 'empty-state' }, [text('No plans match the current filters.')])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: HAS_BTL ? '10' : '9', class: 'empty-state' }, [text('No plans match the current filters.')])]));
     return;
   }
 
@@ -872,6 +982,7 @@ function renderMainTable(filteredRecords) {
 
     const tr = el('tr', { class: 'plan-row', 'data-row-id': rowId }, [
       el('td', {}, [text(r.competitor)]),
+      ...(HAS_BTL ? [el('td', {}, [text(scopeOf(r))])] : []),
       el('td', {}, [text(r.competitor_plan)]),
       el('td', {}, [text(r.omantel_plan || '—')]),
       el('td', {}, [text(r.category || '—')]),
@@ -885,14 +996,14 @@ function renderMainTable(filteredRecords) {
     tbody.appendChild(tr);
 
     const detailTr = el('tr', { class: 'detail-row', id: 'detail-' + rowId }, [
-      el('td', { colspan: '9' }, [el('div', { class: 'detail-grid', html:
+      el('td', { colspan: HAS_BTL ? '10' : '9' }, [el('div', { class: 'detail-grid', html:
         `<div><h4>Gap summary</h4><p>${r.gap_summary ? escapeHtml(r.gap_summary) : (r.gap_analysis_status === 'ANALYZED' ? 'No narrative yet — needs a Scored risk result.' : 'Not analyzed: ' + escapeHtml(r.match_status || ''))}</p>
           <h4 style="margin-top:10px;">Business explanation</h4><p>${r.business_explanation ? escapeHtml(r.business_explanation) : '—'}</p></div>
         <div><h4>Metric-by-metric</h4>${metricMiniTable(r.metric_gaps)}</div>
         <div><h4>Risk drivers</h4><p>${r.risk_reasons ? escapeHtml(displayMetric(r.risk_reasons)) : '—'}</p>
           <h4 style="margin-top:10px;">Competitor / Omantel advantages</h4><p><strong>Competitor:</strong> ${r.competitor_advantages ? escapeHtml(displayMetric(r.competitor_advantages)) : '—'}<br/><strong>Omantel:</strong> ${r.omantel_advantages ? escapeHtml(displayMetric(r.omantel_advantages)) : '—'}</p>
           ${r.capability_gaps ? `<h4 style="margin-top:10px;">Capability gaps</h4><p>${escapeHtml(displayMetric(r.capability_gaps))}</p>` : ''}
-          <h4 style="margin-top:10px;">Extra benefits</h4><p><strong>Competitor:</strong> ${benefitsHtml(r.competitor_extra_benefits)}<br/><strong>Omantel:</strong> ${benefitsHtml(r.omantel_extra_benefits)}</p>
+          <h4 style="margin-top:10px;">Extra benefits</h4><p><strong>Competitor:</strong> ${benefitsHtml(r.competitor_extra_benefits)}<br/><strong>Omantel:</strong> ${benefitsHtml(r.omantel_extra_benefits)}</p>${HAS_BTL ? `<h4 style="margin-top:10px;">Usage / exposure window</h4><p>${escapeHtml(windowLabel(r))} (${escapeHtml(scopeOf(r))} usage data)</p>` : ''}
         </div>` }, [])]),
     ]);
     tbody.appendChild(detailTr);
@@ -925,7 +1036,7 @@ function toggleDetail(rowId) {
   expandedRow = detail.classList.contains('shown') ? detail : null;
 }
 
-document.querySelectorAll('#main-table thead th[data-key]').forEach((th) => {
+function bindMainSort(th) {
   th.addEventListener('click', () => {
     const key = th.dataset.key;
     if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
@@ -935,7 +1046,8 @@ document.querySelectorAll('#main-table thead th[data-key]').forEach((th) => {
     th.setAttribute('data-arrow', sortState.dir === 'asc' ? '▲' : '▼');
     rerender();
   });
-});
+}
+document.querySelectorAll('#main-table thead th[data-key]').forEach(bindMainSort);
 
 // ---------------------------------------------------------------------------
 // No-match table
@@ -943,15 +1055,16 @@ document.querySelectorAll('#main-table thead th[data-key]').forEach((th) => {
 function renderNoMatchTable() {
   const tbody = document.getElementById('no-match-table-body');
   tbody.innerHTML = '';
-  const rows = DATA.no_match.filter((r) => !filters.competitor || r.competitor === filters.competitor);
+  const rows = DATA.no_match.filter((r) => (!filters.competitor || r.competitor === filters.competitor) && inScope(r));
   if (rows.length === 0) {
-    tbody.appendChild(el('tr', {}, [el('td', { colspan: '6', class: 'empty-state' }, [text('No portfolio gaps for the current filter.')])]));
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: HAS_BTL ? '7' : '6', class: 'empty-state' }, [text('No portfolio gaps for the current filter.')])]));
     return;
   }
   rows.forEach((r) => {
     const key = MATCH_STATUS_KEY[r.match_status] || 'neutral';
     tbody.appendChild(el('tr', {}, [
       el('td', {}, [text(r.competitor)]),
+      ...(HAS_BTL ? [el('td', {}, [text(scopeOf(r))])] : []),
       el('td', {}, [text(r.competitor_plan)]),
       el('td', {}, [text(r.category || '—')]),
       el('td', {}, [text(r.product_type || '—')]),
@@ -966,6 +1079,7 @@ function renderNoMatchTable() {
 // ---------------------------------------------------------------------------
 function exportCsv(records) {
   const cols = ['competitor','competitor_plan','omantel_plan','category','product_type','match_status','overall_position','commercial_position_score','primary_attention_area','risk_score','risk_level','risk_reasons','gap_summary','key_issue','business_explanation','competitor_extra_benefits','omantel_extra_benefits'];
+  if (HAS_BTL) cols.push('offer_scope', 'performance_window_months');
   const escapeCsv = (v) => {
     if (v === null || v === undefined) return '';
     const s = String(v).replace(/"/g, '""');
@@ -992,8 +1106,114 @@ function rerender() {
   renderKpis(filtered);
   renderMainTable(filtered);
   renderNoMatchTable();
+  if (HAS_BTL) { renderExecutiveDecisions(); renderBreakdowns(); renderMatching(); renderFreeOffers(); }
   document.getElementById('result-count').textContent = `${filtered.length} of ${DATA.records.length} plans shown`;
 }
+
+// ---------------------------------------------------------------------------
+// BTL-only UI: scope filter, scope columns, section notes, free offers table
+// ---------------------------------------------------------------------------
+function insertScopeHeader(tableId, afterKey, key, label) {
+  const anchor = document.querySelector(`#${tableId} thead th[data-key="${afterKey}"]`);
+  const th = el('th', { 'data-key': key }, [text(label)]);
+  anchor.insertAdjacentElement('afterend', th);
+  if (tableId === 'main-table') bindMainSort(th);
+}
+
+const FREE_OFFER_COLUMNS = [
+  { key: 'product_id', label: 'Product ID' },
+  { key: 'product_name', label: 'Product name' },
+  { key: 'product_type', label: 'Type' },
+  { key: 'data_gb', label: 'Data (GB)', num: true },
+  { key: 'minutes', label: 'Minutes', num: true },
+  { key: 'validity_days', label: 'Validity (days)', num: true },
+  { key: 'avg_unique_customers', label: 'Avg unique customers', num: true },
+  { key: 'months', label: 'Months of data' },
+];
+let freeOfferSort = { key: 'avg_unique_customers', dir: 'desc' };
+
+function setupFreeOffers() {
+  if (!Array.isArray(DATA.btl_free_offers)) return;
+  const section = el('section', { id: 'section-free-offers' }, [
+    el('h2', {}, [text('Omantel BTL free offers (listed, not scored)')]),
+    el('p', { class: 'section-sub' }, [text('Zero-price targeted offers. They are shown for information only and are not matched against competitors or risk-scored.')]),
+    el('div', { class: 'table-scroll' }, [
+      el('table', { class: 'data-table', id: 'free-offers-table' }, [
+        el('thead', {}, [el('tr', {}, FREE_OFFER_COLUMNS.map((c) => el('th', { 'data-key': c.key, class: c.num ? 'num' : '' }, [text(c.label)])))]),
+        el('tbody', { id: 'free-offers-table-body' }, []),
+      ]),
+    ]),
+  ]);
+  document.getElementById('section-no-match').insertAdjacentElement('afterend', section);
+  section.querySelectorAll('thead th').forEach((th) => th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (freeOfferSort.key === key) freeOfferSort.dir = freeOfferSort.dir === 'asc' ? 'desc' : 'asc';
+    else freeOfferSort = { key, dir: 'desc' };
+    section.querySelectorAll('thead th').forEach((h) => { h.classList.remove('sorted'); h.removeAttribute('data-arrow'); });
+    th.classList.add('sorted');
+    th.setAttribute('data-arrow', freeOfferSort.dir === 'asc' ? '▲' : '▼');
+    renderFreeOffers();
+  }));
+}
+
+function renderFreeOffers() {
+  const section = document.getElementById('section-free-offers');
+  if (!section) return;
+  // Free offers are Omantel BTL offers, so the ATL scope filter hides them.
+  section.hidden = filters.scope === 'ATL';
+  const tbody = document.getElementById('free-offers-table-body');
+  tbody.innerHTML = '';
+  const offers = DATA.btl_free_offers;
+  if (offers.length === 0) {
+    tbody.appendChild(el('tr', {}, [el('td', { colspan: String(FREE_OFFER_COLUMNS.length), class: 'empty-state' }, [text('No free BTL offers listed.')])]));
+    return;
+  }
+  const { key, dir } = freeOfferSort;
+  const sorted = [...offers].sort((a, b) => {
+    let av = Array.isArray(a[key]) ? a[key].length : a[key], bv = Array.isArray(b[key]) ? b[key].length : b[key];
+    if (av === null || av === undefined) av = dir === 'desc' ? -Infinity : Infinity;
+    if (bv === null || bv === undefined) bv = dir === 'desc' ? -Infinity : Infinity;
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  sorted.forEach((o) => {
+    tbody.appendChild(el('tr', {}, FREE_OFFER_COLUMNS.map((c) => {
+      let v = o[c.key];
+      if (c.key === 'months') v = (v || []).length ? v.join(', ') : '—';
+      else if (c.num) v = fmtNum(v);
+      else if (v === null || v === undefined || v === '') v = '—';
+      return el('td', { class: c.num ? 'num' : '' }, [text(v)]);
+    })));
+  });
+}
+
+function setupBtlUi() {
+  const group = el('div', { class: 'filter-group' }, [
+    el('label', { for: 'f-scope' }, [text('Offer scope')]),
+    el('select', { id: 'f-scope' }, [
+      el('option', { value: '' }, [text('All')]),
+      el('option', { value: 'ATL' }, [text('ATL')]),
+      el('option', { value: 'BTL' }, [text('BTL')]),
+    ]),
+  ]);
+  document.getElementById('f-competitor').parentElement.insertAdjacentElement('beforebegin', group);
+  insertScopeHeader('main-table', 'competitor', 'offer_scope', 'Offer scope');
+  insertScopeHeader('no-match-table', 'competitor', 'offer_scope', 'Offer scope');
+  document.querySelector('#section-no-match h2').textContent = 'Portfolio gaps — competitor plans with no comparable Omantel plan (incl. BTL "no targeted offer")';
+  document.querySelector('#section-no-match .section-sub').textContent += ' BTL rows mean Omantel has no targeted (BTL) offer of this kind; they are not ATL portfolio gaps.';
+  document.querySelector('#section-executive-decisions .section-sub').textContent += ' ATL and BTL portfolios are listed separately.';
+  setupFreeOffers();
+  document.getElementById('f-scope').addEventListener('change', (e) => {
+    filters.scope = e.target.value;
+    if (filters.competitor && !scopedCompetitors().some((c) => c.name === filters.competitor)) filters.competitor = '';
+    populateCompetitorFilter();
+    rerender();
+  });
+}
+if (HAS_BTL) setupBtlUi();
 
 populateCompetitorFilter();
 document.getElementById('f-competitor').addEventListener('change', (e) => { filters.competitor = e.target.value; rerender(); });
@@ -1002,6 +1222,7 @@ document.getElementById('f-risk').addEventListener('change', (e) => { filters.ri
 document.getElementById('f-search').addEventListener('input', (e) => { filters.search = e.target.value; rerender(); });
 document.getElementById('reset-filters').addEventListener('click', () => {
   filters.competitor = ''; filters.category = ''; filters.risk = ''; filters.search = '';
+  if (HAS_BTL) { filters.scope = ''; document.getElementById('f-scope').value = ''; populateCompetitorFilter(); }
   document.getElementById('f-competitor').value = '';
   document.getElementById('f-category').value = '';
   document.getElementById('f-risk').value = '';

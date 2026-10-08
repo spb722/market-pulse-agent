@@ -13,7 +13,9 @@ Directory layout (root configurable via ``Settings.runs_dir``, default
       <run_id>/
         run.json
         omantel/
-          stage_result.json          # the shared omantel_normalization StageResult
+          stage_result.json          # the shared ATL omantel_normalization StageResult
+          BTL/
+            stage_result.json        # the BTL-scope omantel_normalization StageResult
         portfolio_analysis.json      # run-level executive report analysis
         report.json                  # separate report-job status and final path
         report.lock                  # local-filesystem build lock
@@ -67,8 +69,13 @@ class FileRunRepository:
     def _run_file(self, run_id: str) -> Path:
         return self._run_dir(run_id) / "run.json"
 
-    def _omantel_stage_file(self, run_id: str) -> Path:
-        return self._run_dir(run_id) / "omantel" / "stage_result.json"
+    def _omantel_stage_file(self, run_id: str, offer_scope: str = "ATL") -> Path:
+        base = self._run_dir(run_id) / "omantel"
+        if offer_scope == "BTL":
+            return base / "BTL" / "stage_result.json"
+        if offer_scope != "ATL":
+            raise ValueError(f"Unsupported offer_scope: {offer_scope!r}")
+        return base / "stage_result.json"
 
     def _portfolio_analysis_file(self, run_id: str) -> Path:
         return self._run_dir(run_id) / "portfolio_analysis.json"
@@ -185,13 +192,17 @@ class FileRunRepository:
 
         return StageResult.model_validate(data) if data is not None else None
 
-    def get_omantel_stage_result(self, run_id: str) -> Optional[StageResult]:
-        data = self._read_json(self._omantel_stage_file(run_id))
+    def get_omantel_stage_result(
+        self, run_id: str, offer_scope: str = "ATL"
+    ) -> Optional[StageResult]:
+        data = self._read_json(self._omantel_stage_file(run_id, offer_scope))
 
         return StageResult.model_validate(data) if data is not None else None
 
-    def save_omantel_stage_result(self, sr: StageResult) -> None:
-        self._write_json(self._omantel_stage_file(sr.run_id), sr.model_dump(mode="json"))
+    def save_omantel_stage_result(self, sr: StageResult, offer_scope: str = "ATL") -> None:
+        self._write_json(
+            self._omantel_stage_file(sr.run_id, offer_scope), sr.model_dump(mode="json")
+        )
 
     # ------------------------------------------------------------------
     # Run-level report analysis

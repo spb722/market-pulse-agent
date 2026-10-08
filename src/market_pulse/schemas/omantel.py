@@ -103,6 +103,10 @@ class NormalizedOmantelPlan(BaseModel):
 
     data_gb_per_omr: Optional[float] = None
 
+    # Only present (== "BTL") on below-the-line reference plans. ATL plans
+    # never carry this key; a plan without it means ATL downstream.
+    offer_scope: Optional[Literal["BTL"]] = None
+
 
 # ---------------------------------------------------------------------------
 # LLM semantic enrichment output

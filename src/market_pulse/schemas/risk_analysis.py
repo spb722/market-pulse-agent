@@ -157,6 +157,9 @@ class RiskAnalysisResult(BaseModel):
     step4_gap_analysis_status: Optional[str] = None
 
     risk_status: RiskStatus
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
+    omantel_offer_scope: Literal["ATL", "BTL"] = "ATL"
+    performance_window_months: Optional[int] = None
     reason: Optional[str] = None
     error: Optional[str] = None
 

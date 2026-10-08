@@ -129,6 +129,8 @@ class PlanMatchResult(BaseModel):
 
     selected_match: Optional[OmantelCandidate] = None
     match_status: MatchStatus
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
+    omantel_offer_scope: Literal["ATL", "BTL"] = "ATL"
     match_confidence: Optional[float] = None
     selection_reason: Optional[str] = None
 
