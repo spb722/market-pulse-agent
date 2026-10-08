@@ -79,12 +79,15 @@ curl -X POST http://localhost:8000/runs/RUN-4312FCB6/competitors \
 
 (Or use `"data": {"prepaid": {...}, "postpaid": {...}}` instead of `data_path` if you want to send the JSON inline rather than as file paths — you only need one of the two, not both.)
 
+There's also an optional `"offer_scope"` field. Leave it out (or send `"ATL"`) for public offers; send `"BTL"` for targeted offers. See [section 6](#6-public-atl-vs-targeted-btl-offers-offer_scope).
+
 **Response (comes back immediately — processing happens in the background):**
 ```json
 {
   "run_id": "RUN-4312FCB6",
   "competitor_run_id": "CR-305AA158",
   "competitor": "ooredoo",
+  "offer_scope": "ATL",
   "status": "PROCESSING"
 }
 ```
@@ -291,22 +294,82 @@ curl -X POST http://localhost:8000/runs/RUN-4312FCB6/competitors \
 
 ---
 
-## 6. One Thing to Know Before You Rely on This in Production
+## 6. Public (ATL) vs Targeted (BTL) Offers: `offer_scope`
+
+Operators sell two kinds of offers:
+
+- **ATL (above the line):** public offers anyone can buy. This is the default.
+- **BTL (below the line):** targeted offers sent only to some customers.
+
+Market Pulse compares like with like. A competitor's **ATL** plans are compared with Omantel's **ATL** catalogue, and **BTL** plans are compared **only** with Omantel's **BTL** catalogue. Formulas, weights, thresholds and matching rules are the same for both.
+
+**Submitting BTL offers.** Use the same `run_id` as the ATL submissions for that cycle, and add `"offer_scope": "BTL"`:
+
+```bash
+curl -X POST http://localhost:8000/runs/RUN-4312FCB6/competitors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "competitor": "vodafone",
+    "offer_scope": "BTL",
+    "data_path": {
+      "prepaid": "/full/path/to/prepaid_vodafone_btl_v2.json",
+      "postpaid": "/full/path/to/postpaid_vodafone_btl_v2.json"
+    }
+  }'
+```
+
+So one run can look like this:
+
+```text
+RUN-4312FCB6
+├── CR-001  vodafone  offer_scope=ATL  → compared with Omantel ATL
+├── CR-002  vodafone  offer_scope=BTL  → compared with Omantel BTL
+└── CR-003  ooredoo   offer_scope=ATL  → compared with Omantel ATL
+```
+
+**BTL files are checked more strictly.** They must follow [`docs/btl_json_format.md`](btl_json_format.md), and the API returns **422** right away (no competitor run is created) if:
+
+- a plan has no `plan_id`, or an empty one;
+- a `plan_id` appears twice anywhere in the competitor's prepaid and postpaid plans;
+- a plan's `product_type` isn't one of `COMBO`, `DATA`, `VOICE`, `IDD`, `ROAMING`, `SMS`, `OTHER`;
+- the file's root says a different `offer_scope` from the request. This also catches a BTL-marked file sent without `"offer_scope": "BTL"`.
+
+A plan with a missing `validity_days` or with `data_quality_flags` is accepted. The server only logs a warning for it.
+
+**What's different in the results:**
+
+- Every competitor run and every result record has an `offer_scope` field. Competitor runs stored before this field existed are read as `ATL`.
+- The Omantel BTL reference is prepared once per run, separately from ATL, and shared by every BTL competitor in that run. `GET /runs/{run_id}` lists each competitor with its `offer_scope`.
+- **No Omantel match is a finding, not an error.** If Omantel has no BTL main plan to compare with, the competitor plan stays `NO_DIRECT_MATCH`, meaning "Omantel has no targeted plan here". There's no usable Omantel postpaid BTL catalogue yet, so every competitor postpaid BTL plan currently shows up this way.
+- **Shorter usage window.** BTL risk averages **3 months** of Omantel usage (the BTL usage file only covers Jul–Sep 2026). ATL averages **6**. Each risk record reports the window it used in `performance_window_months`. A matched Omantel product with fewer months of data than the window is marked `REVIEW_REQUIRED` instead of being scored. Change the windows under `performance_window_months` in `config/risk_scoring.yaml`.
+- **Report.** A run can contain only ATL, only BTL, or both. The business report shows ATL and BTL as separate segments. It also lists Omantel's free BTL offers (price 0) without scoring them.
+
+**Filtering by scope:**
+
+```bash
+curl "http://localhost:8000/runs/RUN-4312FCB6/competitors?offer_scope=BTL"
+```
+
+---
+
+## 7. One Thing to Know Before You Rely on This in Production
 
 **Real Omantel performance data (subscriber counts, ARPU) is now wired in** — `risk_analysis` and `narrative_generation` give you real, complete answers for every matched plan today, confirmed by a full real run (see `docs/integration_test_report.md` section 4).
 
 The one thing still worth knowing: that data comes from a **file**, not an API call. It's read from `data/omantel/PRODUCT_PERFORMANCE.csv` (path configurable via `OMANTEL_PERFORMANCE_CSV_PATH`) fresh on every competitor's risk-analysis stage. There's no `POST` endpoint to submit/update it — to refresh it, you (or whoever owns that data) replace the file on disk. If you want a proper upload endpoint for this later, that's a natural next step, not something currently blocking real use.
 
+BTL works the same way, from its own files: the usage data comes from `data/omantel/btl/PRODUCT_PERFORMANCE_BTL.csv` (`OMANTEL_BTL_PERFORMANCE_CSV_PATH`), and the catalogue from `data/omantel/btl/PREPAID_BTL_PRODUCT_CATALOG.csv` (`OMANTEL_BTL_PREPAID_CSV_PATH`). ATL and BTL usage files are never merged.
+
 ---
 
-## 7. Quick Reference
+## 8. Quick Reference
 
 | # | Call | What it's for |
 |---|---|---|
 | 1 | `POST /runs` | Start a new analysis cycle. Do this once per cycle. |
-| 2 | `POST /runs/{run_id}/competitors` | Submit one competitor's data. Repeat per competitor, same `run_id`. Returns immediately. |
+| 2 | `POST /runs/{run_id}/competitors` | Submit one competitor's data. Repeat per competitor, same `run_id`. Optional `offer_scope`: `ATL` (default) or `BTL`. Returns immediately. |
 | 3 | `GET /runs/{run_id}` | Overall run status + competitors + `report_status`, `report_path`, and `report_error`. |
-| 4 | `GET /runs/{run_id}/competitors` | Full list of competitor runs for this run. |
+| 4 | `GET /runs/{run_id}/competitors` | Full list of competitor runs for this run. Add `?offer_scope=ATL` or `?offer_scope=BTL` to filter. |
 | 5 | `GET /runs/{run_id}/competitors/{competitor_run_id}` | One competitor's status, broken down by stage. Poll this. |
 | 6 | `GET /runs/{run_id}/competitors/{competitor_run_id}/results/{stage}` | The actual data for one stage. `{stage}` is one of `competitor_normalization`, `plan_matching`, `gap_analysis`, `risk_analysis`, `narrative_generation`. |
 | 7 | `POST /runs/{run_id}/report` | Generate the report from completed saved results. No request body. Returns HTTP 202; poll the existing run-status endpoint for the absolute report path. |
@@ -329,12 +392,12 @@ full workflow and background-task limitations.
 
 **Error responses:**
 - `404` — the run/competitor you asked for doesn't exist
-- `422` — your request was malformed (missing data, bad file path, unknown stage name)
+- `422` — your request was malformed (missing data, bad file path, unknown stage name, invalid `offer_scope`, or a BTL file that breaks the rules in section 6)
 - `409` — you asked for a stage's results before that stage finished (check the `status` field in the error body and poll again)
 
 ---
 
-## 8. Test Cases Already Run (So You Know It Works)
+## 9. Test Cases Already Run (So You Know It Works)
 
 Full detail in **`docs/integration_test_report.md`**. Summary:
 

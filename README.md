@@ -172,6 +172,57 @@ curl http://localhost:8000/runs/RUN-XXXX/competitors/CR-YYYY
 curl http://localhost:8000/runs/RUN-XXXX/competitors/CR-YYYY/results/risk_analysis
 ```
 
+### 6. ATL vs BTL offers (`offer_scope`)
+
+Each competitor submission has an optional `offer_scope`:
+
+- `"ATL"` (the default): public, above-the-line offers, compared with the Omantel ATL catalogue.
+- `"BTL"`: targeted, below-the-line offers, compared **only** with the Omantel BTL catalogue.
+
+ATL and BTL for the same market cycle share **one `run_id`**. Submit the same
+competitor twice, once per scope:
+
+```bash
+curl -X POST http://localhost:8000/runs/RUN-XXXX/competitors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "competitor": "vodafone",
+    "offer_scope": "BTL",
+    "data_path": {
+      "prepaid": "/full/path/to/prepaid_vodafone_btl_v2.json",
+      "postpaid": "/full/path/to/postpaid_vodafone_btl_v2.json"
+    }
+  }'
+
+# List only the BTL (or ATL) competitor runs of a run
+curl "http://localhost:8000/runs/RUN-XXXX/competitors?offer_scope=BTL"
+```
+
+- **Validation:** BTL files must follow [`docs/btl_json_format.md`](docs/btl_json_format.md).
+  Every plan needs a non-empty `plan_id`, unique across prepaid and postpaid, and a
+  `product_type` of `COMBO`, `DATA`, `VOICE`, `IDD`, `ROAMING`, `SMS` or `OTHER`.
+  If the file's root has an `offer_scope`, it must match the request. Sending a
+  BTL-marked file without `"offer_scope": "BTL"` is rejected too. All of these
+  return **422** before any competitor run is created.
+- **Omantel BTL reference:** prepared once per run, separately from ATL, and
+  shared by every BTL competitor in that run.
+- **Results:** every competitor run and result record carries `offer_scope`.
+  Old stored runs without the field load as `ATL`.
+- **Risk window:** BTL risk averages **3 months** of usage and ATL averages **6**.
+  Both values are set under `performance_window_months` in
+  [`config/risk_scoring.yaml`](config/risk_scoring.yaml).
+- **Report:** a run can hold only ATL, only BTL, or both. The business report
+  shows ATL and BTL as separate segments and lists Omantel BTL free offers
+  (price 0) without scoring them.
+- **Data paths:** the BTL input files are configured in `.env` (see `.env.example`):
+  `OMANTEL_BTL_PREPAID_CSV_PATH`, `OMANTEL_BTL_POSTPAID_CSV_PATH` (leave it empty
+  while there is no postpaid BTL catalogue), `OMANTEL_BTL_PERFORMANCE_CSV_PATH`,
+  `OMANTEL_BTL_FREE_OFFERS_CSV_PATH` and `OMANTEL_BTL_FREE_OFFERS_PERFORMANCE_CSV_PATH`.
+
+Design decisions and data preparation are documented in
+[`docs/btl_design_plan.md`](docs/btl_design_plan.md) and
+[`docs/omantel_btl_build_log.md`](docs/omantel_btl_build_log.md).
+
 **For the full walkthrough** — every endpoint, real example responses, what each stage
 actually means, and the current known limitations — see **[`docs/usage_guide.md`](docs/usage_guide.md)**.
 
