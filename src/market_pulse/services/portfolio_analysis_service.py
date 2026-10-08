@@ -24,11 +24,32 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _segment_key(record: dict[str, Any]) -> tuple[str, str]:
-    return (
+def _scope(record: dict[str, Any]) -> str:
+    return "BTL" if record.get("offer_scope") == "BTL" else "ATL"
+
+
+def _segment_key(record: dict[str, Any]) -> tuple[str, ...]:
+    """ATL keeps (category, product_type); BTL is prefixed so scopes never mix."""
+    key = (
         str(record.get("category") or "uncategorized").lower(),
         str(record.get("product_type") or "OTHER").upper(),
     )
+    return ("btl", *key) if _scope(record) == "BTL" else key
+
+
+def _advisor_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """ATL payloads are sent exactly as before BTL support (stable cache keys)."""
+    if payload.get("offer_scope") == "BTL":
+        return payload
+
+    def strip(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: strip(v) for k, v in value.items() if k != "offer_scope"}
+        if isinstance(value, list):
+            return [strip(v) for v in value]
+        return value
+
+    return strip(payload)
 
 
 def _is_positive_risk(record: dict[str, Any], minimum_risk: float) -> bool:
@@ -43,6 +64,7 @@ def _is_positive_risk(record: dict[str, Any], minimum_risk: float) -> bool:
 
 def _comparison_fact(record: dict[str, Any]) -> dict[str, Any]:
     return {
+        "offer_scope": _scope(record),
         "competitor": record.get("competitor"),
         "competitor_plan_id": record.get("competitor_plan_id"),
         "competitor_plan": record.get("competitor_plan"),
@@ -177,6 +199,7 @@ def _plan_fact(
     positive = [item for item in comparisons if (_number(item.get("risk_score")) or 0) > 0]
     headline = max(positive, key=lambda item: _number(item.get("risk_score")) or 0)
     return {
+        "offer_scope": _scope(records[0]),
         "omantel_plan_id": omantel_plan_id,
         "omantel_plan": next(
             (record.get("omantel_plan") for record in records if record.get("omantel_plan")),
@@ -191,11 +214,12 @@ def _plan_fact(
 
 
 def _segment_facts(
-    segment: tuple[str, str],
+    segment: tuple[str, ...],
     affected_ids: set[str],
     records: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    category, product_type = segment
+    category, product_type = segment[-2:]
+    offer_scope = "BTL" if len(segment) == 3 else "ATL"
     records_by_plan: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         if (
@@ -211,7 +235,8 @@ def _segment_facts(
     ]
     plans.sort(key=lambda plan: (-plan["headline_risk_score"], plan["omantel_plan_id"]))
     return {
-        "segment_key": f"{category}:{product_type}",
+        "segment_key": ":".join(segment),
+        "offer_scope": offer_scope,
         "category": category,
         "product_type": product_type,
         "plans": plans,
@@ -229,14 +254,14 @@ def build_portfolio_analysis(
     """Build an executive decision dataset with one LLM call per risky segment."""
 
     settings = settings or get_settings()
-    affected_by_segment: dict[tuple[str, str], set[str]] = defaultdict(set)
+    affected_by_segment: dict[tuple[str, ...], set[str]] = defaultdict(set)
     positive_records = [record for record in records if _is_positive_risk(record, minimum_risk)]
     for record in positive_records:
         affected_by_segment[_segment_key(record)].add(str(record["omantel_plan_id"]))
 
     segment_payloads = [
         _segment_facts(segment, affected_by_segment[segment], records)
-        for segment in sorted(affected_by_segment)
+        for segment in sorted(affected_by_segment, key=lambda key: (len(key), key))
     ]
     rows: list[dict[str, Any]] = []
     group_summaries: list[dict[str, Any]] = []
@@ -254,7 +279,7 @@ def build_portfolio_analysis(
             expected_ids = {plan["omantel_plan_id"] for plan in payload["plans"]}
             advice: PortfolioSegmentAdvice | None = None
             try:
-                advice = advisor(payload)
+                advice = advisor(_advisor_payload(payload))
             except Exception as exc:  # noqa: BLE001 - report generation must degrade gracefully
                 logger.warning(
                     "Portfolio advice fallback used for segment %s: %s",
@@ -279,6 +304,7 @@ def build_portfolio_analysis(
             group_summaries.append(
                 {
                     "segment_key": payload["segment_key"],
+                    "offer_scope": payload["offer_scope"],
                     "category": payload["category"],
                     "product_type": payload["product_type"],
                     "summary": (
@@ -302,6 +328,7 @@ def build_portfolio_analysis(
                 rows.append(
                     {
                         "segment_key": payload["segment_key"],
+                        "offer_scope": payload["offer_scope"],
                         "category": payload["category"],
                         "product_type": payload["product_type"],
                         **plan,

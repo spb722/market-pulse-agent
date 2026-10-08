@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import Counter
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from market_pulse.config.settings import Settings
@@ -104,18 +104,26 @@ def _ctx(run_id: str, competitor_run_id: str | None = None, stage: str | None = 
 
 
 def ensure_omantel_reference(
-    run_id: str, repo: FileRunRepository, settings: Settings
+    run_id: str,
+    repo: FileRunRepository,
+    settings: Settings,
+    offer_scope: Literal["ATL", "BTL"] = "ATL",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Prepare (or reuse) the shared Omantel reference for ``run_id``.
 
     Per ``docs/architecture.md`` section 5: "Do not unnecessarily rerun
     Step 2 separately for every competitor." If a COMPLETED omantel
     reference already exists for this run, it is reused without
-    re-running Step 2.
+    re-running Step 2. ATL and BTL references are prepared, stored and
+    reused independently (``offer_scope``); FAILED ones are retried.
     """
 
+    status_field = (
+        "omantel_reference_status_btl" if offer_scope == "BTL" else "omantel_reference_status"
+    )
+
     with _omantel_prep_lock:
-        existing = repo.get_omantel_stage_result(run_id)
+        existing = repo.get_omantel_stage_result(run_id, offer_scope)
 
         if existing is not None and existing.status == "COMPLETED":
             logger.info(
@@ -136,7 +144,8 @@ def ensure_omantel_reference(
                 stage="omantel_normalization",
                 status="PROCESSING",
                 started_at=started_at,
-            )
+            ),
+            offer_scope,
         )
 
         logger.info(
@@ -146,14 +155,31 @@ def ensure_omantel_reference(
         try:
             # Its own Langfuse trace: this work belongs to the run, not to
             # whichever competitor happened to trigger it.
-            with llm_trace(
-                name="omantel_reference", settings=settings, run_id=run_id
-            ) as llm_usage:
-                prepaid_df, postpaid_df = load_omantel_catalogues_from_csv(
-                    settings.omantel_prepaid_csv_path, settings.omantel_postpaid_csv_path
-                )
+            # Only the BTL reference trace is scope-tagged; the ATL trace is
+            # unchanged.
+            trace_scope = {"offer_scope": "BTL"} if offer_scope == "BTL" else {}
 
-                enriched_plans, errors = run_omantel_normalization(prepaid_df, postpaid_df)
+            with llm_trace(
+                name="omantel_reference", settings=settings, run_id=run_id, **trace_scope
+            ) as llm_usage:
+                if offer_scope == "BTL":
+                    prepaid_df, postpaid_df = load_omantel_catalogues_from_csv(
+                        settings.omantel_btl_prepaid_csv_path,
+                        settings.omantel_btl_postpaid_csv_path,
+                    )
+
+                    enriched_plans, errors = run_omantel_normalization(
+                        prepaid_df, postpaid_df, offer_scope="BTL"
+                    )
+                else:
+                    prepaid_df, postpaid_df = load_omantel_catalogues_from_csv(
+                        settings.omantel_prepaid_csv_path,
+                        settings.omantel_postpaid_csv_path,
+                    )
+
+                    enriched_plans, errors = run_omantel_normalization(
+                        prepaid_df, postpaid_df
+                    )
 
             # Every plan failing enrichment (e.g. the LLM ignoring the output
             # format, or being unreachable) must not produce an empty but
@@ -181,13 +207,14 @@ def ensure_omantel_reference(
                     started_at=started_at,
                     completed_at=utcnow(),
                     error=str(exc),
-                )
+                ),
+                offer_scope,
             )
 
             run = repo.get_run(run_id)
 
             if run is not None:
-                run.omantel_reference_status = "FAILED"
+                setattr(run, status_field, "FAILED")
                 repo.save_run(run)
 
             raise
@@ -201,13 +228,14 @@ def ensure_omantel_reference(
                 result=[enriched_plans, errors],
                 started_at=started_at,
                 completed_at=utcnow(),
-            )
+            ),
+            offer_scope,
         )
 
         run = repo.get_run(run_id)
 
         if run is not None:
-            run.omantel_reference_status = "COMPLETED"
+            setattr(run, status_field, "COMPLETED")
             repo.save_run(run)
 
         logger.info(
@@ -326,6 +354,11 @@ def process_competitor(
     session ``run_id``, tagged with ``competitor_run_id``.
     """
 
+    # The scope is read from the stored CompetitorRun (written at submission),
+    # so routes.py's background-task call signature is unchanged.
+    stored_cr = repo.get_competitor_run(run_id, competitor_run_id)
+    offer_scope = stored_cr.offer_scope if stored_cr is not None else "ATL"
+
     try:
         with llm_trace(
             name="competitor_run",
@@ -333,6 +366,7 @@ def process_competitor(
             run_id=run_id,
             competitor_run_id=competitor_run_id,
             competitor=competitor,
+            offer_scope=offer_scope,
         ) as llm_usage:
             _process_competitor(
                 run_id, competitor_run_id, competitor, prepaid_raw, postpaid_raw, repo, settings
@@ -361,6 +395,8 @@ def _process_competitor(
             _ctx(run_id, competitor_run_id),
         )
         return
+
+    offer_scope = cr.offer_scope
 
     cr.status = "PROCESSING"
     cr.started_at = utcnow()
@@ -392,8 +428,9 @@ def _process_competitor(
         )
 
         logger.info(
-            "%s | Step 1 complete: %d plans enriched, %d errors",
+            "%s | Step 1 complete (offer_scope=%s): %d plans enriched, %d errors",
             _ctx(run_id, competitor_run_id, current_stage),
+            offer_scope,
             len(enriched_plans),
             len(errors),
         )
@@ -405,14 +442,18 @@ def _process_competitor(
         # correctly in logs/errors without touching the (already-COMPLETED)
         # competitor_normalization StageResult below.
         current_stage = "omantel_normalization"
-        omantel_plans, _omantel_errors = ensure_omantel_reference(run_id, repo, settings)
+        omantel_plans, _omantel_errors = ensure_omantel_reference(
+            run_id, repo, settings, offer_scope=offer_scope
+        )
 
         # --- Stage 2: plan_matching (Step 3) --------------------------------
         current_stage = "plan_matching"
         started_at = utcnow()
         _save_stage(repo, run_id, competitor_run_id, current_stage, "PROCESSING", started_at)
 
-        step3_matches = match_competitor_plans(enriched_plans, omantel_plans)
+        step3_matches = match_competitor_plans(
+            enriched_plans, omantel_plans, offer_scope=offer_scope
+        )
 
         # Plans with no candidate family (NO_DIRECT_MATCH) or a structured
         # similarity below 0.40 (NO_GOOD_MATCH without an LLM confidence) are
@@ -448,7 +489,9 @@ def _process_competitor(
         started_at = utcnow()
         _save_stage(repo, run_id, competitor_run_id, current_stage, "PROCESSING", started_at)
 
-        step4_results = analyze_matches(step3_matches, enriched_plans, omantel_plans)
+        step4_results = analyze_matches(
+            step3_matches, enriched_plans, omantel_plans, offer_scope=offer_scope
+        )
 
         _save_stage(
             repo, run_id, competitor_run_id, current_stage, "COMPLETED", started_at, result=step4_results
@@ -474,23 +517,28 @@ def _process_competitor(
         # relative to Omantel's whole portfolio. A failure to load must not
         # fail this competitor's pipeline -- fall back to an empty list,
         # reproducing the previous REVIEW_REQUIRED-for-everything behavior.
+        # BTL and ATL use separate performance files, which are never merged.
+        performance_csv_path = (
+            settings.omantel_btl_performance_csv_path
+            if offer_scope == "BTL"
+            else settings.omantel_performance_csv_path
+        )
+
         try:
-            performance_records = load_performance_records_from_csv(
-                settings.omantel_performance_csv_path
-            )
+            performance_records = load_performance_records_from_csv(performance_csv_path)
         except Exception as exc:  # noqa: BLE001 - defensive fallback, do not fail the competitor pipeline
             logger.warning(
                 "%s | Could not load Omantel product-performance data from %s (%s); "
                 "falling back to performance_records=[] for this run - "
                 "REVIEW_REQUIRED is expected for matched plans until this is resolved.",
                 _ctx(run_id, competitor_run_id, current_stage),
-                settings.omantel_performance_csv_path,
+                performance_csv_path,
                 exc,
             )
             performance_records = []
 
         step5_results = analyze_step5_records(
-            step4_results, performance_records=performance_records
+            step4_results, performance_records=performance_records, offer_scope=offer_scope
         )
 
         _save_stage(
@@ -504,7 +552,7 @@ def _process_competitor(
             _ctx(run_id, competitor_run_id, current_stage),
             dict(risk_counts),
             len(performance_records),
-            settings.omantel_performance_csv_path,
+            performance_csv_path,
         )
 
         # --- Stage 5: narrative_generation (Step 6) -------------------------

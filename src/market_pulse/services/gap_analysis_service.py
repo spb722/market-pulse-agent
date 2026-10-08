@@ -738,6 +738,7 @@ def analyze_matches(
     competitor_plans: list[Plan],
     omantel_plans: list[Plan],
     config: Optional[GapAnalysisConfig] = None,
+    offer_scope: str = "ATL",
 ) -> list[dict[str, Any]]:
     """Analyze a batch of Step 3 match records.
 
@@ -771,6 +772,9 @@ def analyze_matches(
                 "gap_analysis_status": "PROCESSING_ERROR",
                 "error": str(exc),
             }
+
+        result["offer_scope"] = offer_scope
+        result["omantel_offer_scope"] = offer_scope
 
         results.append(result)
 

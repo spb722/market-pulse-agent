@@ -301,7 +301,7 @@ def build_llm_facts(step4_item: Step4Item, step5_item: Step5Item) -> dict[str, A
 
     weighted_position = step4_item.get("weighted_position", {}) or {}
 
-    return {
+    facts: dict[str, Any] = {
         "competitor_plan": step4_item.get("competitor_plan"),
         "omantel_plan": step4_item.get("omantel_plan"),
         "product_type": step4_item.get("product_type"),
@@ -319,6 +319,13 @@ def build_llm_facts(step4_item: Step4Item, step5_item: Step5Item) -> dict[str, A
         "risk_score": step5_item.get("risk_score"),
         "risk_level": step5_item.get("risk_level"),
     }
+
+    # Only targeted (BTL) offers carry the scope, so ATL facts -- and therefore
+    # the ATL prompt payload and LLM cache keys -- are unchanged.
+    if step4_item.get("offer_scope") == "BTL":
+        facts["offer_scope"] = "BTL"
+
+    return facts
 
 
 def fallback_narrative(step4_item: Step4Item, step5_item: Step5Item) -> dict[str, str]:

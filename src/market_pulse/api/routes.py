@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from market_pulse.api.schemas import CompetitorSubmitRequest
 from market_pulse.config.settings import Settings, get_settings
@@ -106,6 +106,120 @@ def _validate_payload_shape(raw: Any, category: str) -> None:
         )
 
 
+_BTL_PRODUCT_TYPES = ("COMBO", "DATA", "VOICE", "IDD", "ROAMING", "SMS", "OTHER")
+
+
+def _check_root_scope(raw: Any, category: str, request_scope: str) -> None:
+    """Reject a payload whose root ``offer_scope`` contradicts the request.
+
+    Used for BTL requests (root must be "BTL" if present) and, as a reverse
+    safety check, for ATL requests (root must not say "BTL"). A root without
+    an ``offer_scope`` field is always accepted.
+    """
+
+    root = raw[0] if isinstance(raw, list) and raw else None
+
+    if not isinstance(root, dict) or "offer_scope" not in root:
+        return
+
+    file_scope = root["offer_scope"]
+
+    if request_scope == "BTL" and file_scope != "BTL":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{category} payload root has offer_scope={file_scope!r} but the request "
+                f"offer_scope is 'BTL'."
+            ),
+        )
+
+    if request_scope == "ATL" and file_scope == "BTL":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{category} payload root is marked offer_scope='BTL' but the request "
+                f"offer_scope is 'ATL' (default). Submit it with offer_scope='BTL'."
+            ),
+        )
+
+
+def _validate_btl_payload(raw: Any, category: str, seen_plan_ids: dict[str, str]) -> None:
+    """BTL-only strictness: plan_id present/unique, product_type in the allowed set.
+
+    ``seen_plan_ids`` maps plan_id -> category and is shared across the
+    competitor's prepaid and postpaid payloads so duplicates are caught
+    across both. Missing categories (synthesized empty envelopes) pass.
+    Null ``validity_days`` / ``data_quality_flags`` are warnings only.
+    """
+
+    root = raw[0]
+
+    for key in _CATEGORY_KEYS[category]:
+        plans = root.get(key) or []
+
+        if not isinstance(plans, list):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{category} '{key}' must be a list of plan objects, found {type(plans).__name__}.",
+            )
+
+        for index, plan in enumerate(plans):
+            if not isinstance(plan, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{category} {key}[{index}] must be a plan object, found {type(plan).__name__}.",
+                )
+
+            plan_id = plan.get("plan_id")
+            label = plan.get("plan_name") or plan.get("name") or f"{key}[{index}]"
+
+            if not isinstance(plan_id, str) or not plan_id.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{category} {key}[{index}] ({label!r}) is missing a plan_id (BTL plans require a non-empty plan_id).",
+                )
+
+            if plan_id in seen_plan_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Duplicate plan_id {plan_id!r} in {category} {key}[{index}] "
+                        f"(already used in {seen_plan_ids[plan_id]}); plan_id must be unique "
+                        f"across the competitor's prepaid and postpaid plans."
+                    ),
+                )
+
+            seen_plan_ids[plan_id] = f"{category} {key}"
+
+            product_type = plan.get("product_type")
+
+            if product_type not in _BTL_PRODUCT_TYPES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{category} {key}[{index}] plan_id={plan_id!r} has invalid product_type "
+                        f"{product_type!r}; expected one of {list(_BTL_PRODUCT_TYPES)}."
+                    ),
+                )
+
+            if plan.get("validity_days") is None or plan.get("data_quality_flags"):
+                logger.warning(
+                    "BTL %s plan_id=%s | warning: null validity_days or data_quality_flags present",
+                    category,
+                    plan_id,
+                )
+
+
+def _validate_scope_payload(raw: Any, category: str, offer_scope: str, seen_plan_ids: dict[str, str]) -> None:
+    """Shape check (all scopes) plus scope-specific checks, before any run is created."""
+
+    _validate_payload_shape(raw, category)
+    _check_root_scope(raw, category, offer_scope)
+
+    if offer_scope == "BTL":
+        _validate_btl_payload(raw, category, seen_plan_ids)
+
+
 @router.post("/runs", status_code=201)
 def create_run(repo: FileRunRepository = Depends(get_repository)) -> dict:
     run_id = generate_run_id()
@@ -131,18 +245,20 @@ def submit_competitor(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 
+    seen_plan_ids: dict[str, str] = {}
+
     if request.data:
         input_type = "inline"
 
         if "prepaid" in request.data:
             prepaid_raw = request.data["prepaid"]
-            _validate_payload_shape(prepaid_raw, "prepaid")
+            _validate_scope_payload(prepaid_raw, "prepaid", request.offer_scope, seen_plan_ids)
         else:
             prepaid_raw = _EMPTY_ENVELOPE["prepaid"]
 
         if "postpaid" in request.data:
             postpaid_raw = request.data["postpaid"]
-            _validate_payload_shape(postpaid_raw, "postpaid")
+            _validate_scope_payload(postpaid_raw, "postpaid", request.offer_scope, seen_plan_ids)
         else:
             postpaid_raw = _EMPTY_ENVELOPE["postpaid"]
     else:
@@ -164,7 +280,7 @@ def submit_competitor(
                     status_code=422, detail=f"Failed to load data_path.prepaid JSON: {exc}"
                 ) from exc
 
-            _validate_payload_shape(prepaid_raw, "prepaid")
+            _validate_scope_payload(prepaid_raw, "prepaid", request.offer_scope, seen_plan_ids)
         else:
             prepaid_raw = _EMPTY_ENVELOPE["prepaid"]
 
@@ -181,7 +297,7 @@ def submit_competitor(
                     status_code=422, detail=f"Failed to load data_path.postpaid JSON: {exc}"
                 ) from exc
 
-            _validate_payload_shape(postpaid_raw, "postpaid")
+            _validate_scope_payload(postpaid_raw, "postpaid", request.offer_scope, seen_plan_ids)
         else:
             postpaid_raw = _EMPTY_ENVELOPE["postpaid"]
 
@@ -193,6 +309,7 @@ def submit_competitor(
         competitor=request.competitor,
         status="PROCESSING",
         input_type=input_type,
+        offer_scope=request.offer_scope,
         created_at=utcnow(),
     )
     repo.create_competitor_run(cr)
@@ -235,6 +352,7 @@ def submit_competitor(
         "run_id": run_id,
         "competitor_run_id": competitor_run_id,
         "competitor": request.competitor,
+        "offer_scope": request.offer_scope,
         "status": "PROCESSING",
     }
 
@@ -287,6 +405,7 @@ def get_run_status(run_id: str, repo: FileRunRepository = Depends(get_repository
             {
                 "competitor_run_id": cr.competitor_run_id,
                 "competitor": cr.competitor,
+                "offer_scope": cr.offer_scope,
                 "status": cr.status,
             }
             for cr in competitor_runs
@@ -295,13 +414,22 @@ def get_run_status(run_id: str, repo: FileRunRepository = Depends(get_repository
 
 
 @router.get("/runs/{run_id}/competitors")
-def list_competitors(run_id: str, repo: FileRunRepository = Depends(get_repository)) -> list[CompetitorRun]:
+def list_competitors(
+    run_id: str,
+    offer_scope: Optional[Literal["ATL", "BTL"]] = Query(default=None),
+    repo: FileRunRepository = Depends(get_repository),
+) -> list[CompetitorRun]:
     run = repo.get_run(run_id)
 
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found.")
 
-    return repo.list_competitor_runs(run_id)
+    competitor_runs = repo.list_competitor_runs(run_id)
+
+    if offer_scope is not None:
+        competitor_runs = [cr for cr in competitor_runs if cr.offer_scope == offer_scope]
+
+    return competitor_runs
 
 
 @router.get("/runs/{run_id}/competitors/{competitor_run_id}")
@@ -330,6 +458,7 @@ def get_competitor_status(
         "run_id": run_id,
         "competitor_run_id": competitor_run_id,
         "competitor": cr.competitor,
+        "offer_scope": cr.offer_scope,
         "status": cr.status,
         "stages": stages,
     }

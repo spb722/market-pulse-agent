@@ -766,8 +766,25 @@ def match_competitor_plan(
     return base_result
 
 
+BTL_NO_DIRECT_MATCH_REASON = "Omantel has no targeted (BTL) offer of this kind."
+
+
+def _stamp_scope(result: dict[str, Any], offer_scope: str) -> dict[str, Any]:
+    """Add the offer-scope fields (and the BTL no-match wording) to a record."""
+
+    result["offer_scope"] = offer_scope
+    result["omantel_offer_scope"] = offer_scope
+
+    if offer_scope == "BTL" and result.get("match_status") == "NO_DIRECT_MATCH":
+        result["selection_reason"] = BTL_NO_DIRECT_MATCH_REASON
+
+    return result
+
+
 def match_competitor_plans(
-    competitor_plans: list[Plan], omantel_plans: list[Plan]
+    competitor_plans: list[Plan],
+    omantel_plans: list[Plan],
+    offer_scope: str = "ATL",
 ) -> list[dict[str, Any]]:
     """Match a batch of competitor plans against the Omantel reference catalogue.
 
@@ -789,19 +806,22 @@ def match_competitor_plans(
         try:
             result = match_competitor_plan(competitor_plan, omantel_plans)
             result = attach_capability_insights(result, competitor_plan, omantel_plans)
-            all_matches.append(result)
+            all_matches.append(_stamp_scope(result, offer_scope))
 
         except Exception as exc:  # noqa: BLE001 - intentional isolation boundary
             plan_name = competitor_plan.get("plan_name")
             logger.warning("Plan matching failed for %r: %s", plan_name, exc)
 
             all_matches.append(
-                {
-                    "competitor_plan_id": competitor_plan.get("plan_id"),
-                    "competitor_plan_name": plan_name,
-                    "match_status": "PROCESSING_ERROR",
-                    "error": str(exc),
-                }
+                _stamp_scope(
+                    {
+                        "competitor_plan_id": competitor_plan.get("plan_id"),
+                        "competitor_plan_name": plan_name,
+                        "match_status": "PROCESSING_ERROR",
+                        "error": str(exc),
+                    },
+                    offer_scope,
+                )
             )
 
     logger.info(

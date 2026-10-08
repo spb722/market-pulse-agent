@@ -134,6 +134,8 @@ class GapAnalysisResult(BaseModel):
     match_confidence: Optional[float] = None
 
     gap_analysis_status: GapAnalysisStatus
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
+    omantel_offer_scope: Literal["ATL", "BTL"] = "ATL"
     reason: Optional[str] = None
     error: Optional[str] = None
 

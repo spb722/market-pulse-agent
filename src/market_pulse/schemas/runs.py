@@ -48,6 +48,8 @@ class Run(BaseModel):
     error: Optional[str] = None
     completed_competitor_count: int = 0
     omantel_reference_status: StageStatus = "PENDING"
+    # Status of the BTL-scope Omantel reference (the field above is ATL).
+    omantel_reference_status_btl: StageStatus = "PENDING"
 
 
 class CompetitorRun(BaseModel):
@@ -58,6 +60,8 @@ class CompetitorRun(BaseModel):
     competitor: str
     status: CompetitorRunStatus = "CREATED"
     input_type: Literal["inline", "path"]
+    # Old stored competitor_run.json files lack this field -> default ATL.
+    offer_scope: Literal["ATL", "BTL"] = "ATL"
     created_at: datetime = Field(default_factory=utcnow)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

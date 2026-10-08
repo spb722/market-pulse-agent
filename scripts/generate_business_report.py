@@ -18,6 +18,16 @@ from market_pulse.services.business_report_service import (
 from market_pulse.storage.file_repository import FileRunRepository
 
 
+def _parse_spec(spec: str) -> tuple:
+    """RUN_ID:COMPETITOR_RUN_ID:NAME with an optional trailing :ATL / :BTL (default ATL)."""
+    scope = "ATL"
+    head, _, tail = spec.rpartition(":")
+    if tail.upper() in ("ATL", "BTL") and head.count(":") >= 2:
+        spec, scope = head, tail.upper()
+    parts = spec.split(":", 2)
+    return (*parts, scope) if len(parts) == 3 else tuple(parts)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group()
@@ -37,9 +47,9 @@ def main() -> None:
         print(f"Wrote {job.report_path}")
         return
 
-    run_specs = [tuple(spec.split(":", 2)) for spec in args.runs] if args.runs else DEFAULT_RUNS
-    if any(len(spec) != 3 for spec in run_specs):
-        parser.error("--run must have the format RUN_ID:COMPETITOR_RUN_ID:NAME")
+    run_specs = [_parse_spec(spec) for spec in args.runs] if args.runs else DEFAULT_RUNS
+    if any(len(spec) < 4 and spec not in DEFAULT_RUNS for spec in run_specs):
+        parser.error("--run must have the format RUN_ID:COMPETITOR_RUN_ID:NAME[:ATL|BTL]")
     run_ids = sorted({spec[0] for spec in run_specs})
     analysis_run_id = run_ids[0] if len(run_ids) == 1 else "MULTI-RUN:" + ",".join(run_ids)
     output_path = (Path(settings.reports_dir) / "market_pulse_business_report.html").resolve()

@@ -157,12 +157,26 @@ class RiskLevelThresholds(BaseModel):
         return self
 
 
+class PerformanceWindowMonths(BaseModel):
+    """Step 5 usage-averaging window (in months) per offer scope."""
+
+    ATL: int = Field(default=6, ge=1)
+    BTL: int = Field(default=3, ge=1)
+
+    def for_scope(self, offer_scope: str) -> int:
+        return self.BTL if offer_scope == "BTL" else self.ATL
+
+
 class RiskAnalysisConfig(BaseModel):
     """Step 5 (risk scoring) tunables -- mirrors ``risk_analysis:`` in YAML."""
 
     competitive_threat_threshold: float = Field(gt=0.0)
     business_exposure_weights: BusinessExposureWeights
     risk_level_thresholds: RiskLevelThresholds
+    # Optional in YAML: omitted -> ATL 6 months, BTL 3 months.
+    performance_window_months: PerformanceWindowMonths = Field(
+        default_factory=PerformanceWindowMonths
+    )
 
 
 class FormulaConfig(BaseModel):

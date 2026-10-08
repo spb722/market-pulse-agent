@@ -107,6 +107,19 @@ class Settings(BaseSettings):
     omantel_prepaid_csv_path: str = "data/omantel/PREPAID_PRODUCT_CATALOG.csv"
     omantel_postpaid_csv_path: str = "data/omantel/POSTPAID_PRODUCT_CATALOG.csv"
 
+    # BTL (below-the-line) Omantel reference catalogues. There is no postpaid
+    # BTL catalogue yet: None means the postpaid BTL reference is empty (zero
+    # plans), not an error.
+    omantel_btl_prepaid_csv_path: str = "data/omantel/btl/PREPAID_BTL_PRODUCT_CATALOG.csv"
+    omantel_btl_postpaid_csv_path: Optional[str] = None
+    # BTL product-performance CSV (Step 5 usage for BTL competitors; window from risk_scoring.yaml).
+    omantel_btl_performance_csv_path: str = "data/omantel/btl/PRODUCT_PERFORMANCE_BTL.csv"
+    # Omantel BTL free offers (price 0) and their usage: report-only, never scored.
+    omantel_btl_free_offers_csv_path: str = "data/omantel/btl/BTL_FREE_OFFERS.csv"
+    omantel_btl_free_offers_performance_csv_path: str = (
+        "data/omantel/btl/BTL_FREE_OFFERS_PERFORMANCE.csv"
+    )
+
     # Real Omantel product-performance CSV (see
     # risk_analysis_service.load_performance_records_from_csv). Loaded fresh
     # per-competitor at the risk_analysis stage; see

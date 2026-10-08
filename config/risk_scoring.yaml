@@ -149,3 +149,18 @@ risk_analysis:
   risk_level_thresholds:
     medium: 5   # risk_score at or above this -> MEDIUM
     high: 10     # risk_score at or above this -> HIGH
+
+  # How many calendar months of Omantel product usage are averaged for the
+  # customer/revenue exposure inputs, per offer scope. The window ends at the
+  # LATEST month present in that scope's performance file (ATL and BTL use
+  # separate files, which are never merged). A matched Omantel product with
+  # fewer months than the window inside it is REVIEW_REQUIRED, not scored.
+  # (The output field names keep their historical "_6m" suffix; the window
+  # actually used is reported in each risk record's performance_window_months.)
+  #   ATL: 6 reproduces the original reference behavior.
+  #   BTL: 3 because the BTL usage file only covers Jul-Sep 2026. RAISE it
+  #        once more BTL history exists; products with fewer months in the
+  #        window then become REVIEW_REQUIRED.
+  performance_window_months:
+    ATL: 6
+    BTL: 3

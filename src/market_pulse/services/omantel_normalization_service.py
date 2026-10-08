@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 
 import pandas as pd
 
@@ -77,16 +77,37 @@ def filter_postpaid_atl(postpaid_df: pd.DataFrame) -> pd.DataFrame:
     return postpaid_df[postpaid_df["product_flag"].isin(["ATL", "MAIN_PLAN"])].copy()
 
 
+def filter_prepaid_btl(prepaid_df: pd.DataFrame) -> pd.DataFrame:
+    """Filter the prepaid catalogue to active, below-the-line (BTL) offers."""
+
+    return prepaid_df[
+        (prepaid_df["offer_type"] == "BTL") & (prepaid_df["product_status"] == "active")
+    ].copy()
+
+
+def filter_postpaid_btl(postpaid_df: pd.DataFrame) -> pd.DataFrame:
+    """Filter the postpaid catalogue to BTL offers (no such catalogue yet)."""
+
+    return postpaid_df[postpaid_df["product_flag"] == "BTL"].copy()
+
+
 def load_omantel_catalogues_from_csv(
-    prepaid_path: str | Path, postpaid_path: str | Path
+    prepaid_path: str | Path, postpaid_path: Optional[str | Path]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the raw prepaid and postpaid catalogue CSVs from disk.
+
+    A ``None`` postpaid path yields an empty DataFrame (zero postpaid plans);
+    used for BTL while no postpaid BTL catalogue exists.
 
     Kept separate from the pure normalization logic below so tests can
     exercise normalization without requiring real CSV files on disk.
     """
 
-    return load_catalogue_csv(prepaid_path), load_catalogue_csv(postpaid_path)
+    postpaid_df = (
+        pd.DataFrame() if postpaid_path is None else load_catalogue_csv(postpaid_path)
+    )
+
+    return load_catalogue_csv(prepaid_path), postpaid_df
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +419,9 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
 
 
 def normalize_omantel_catalogues(
-    prepaid_df: pd.DataFrame, postpaid_df: pd.DataFrame
+    prepaid_df: pd.DataFrame,
+    postpaid_df: pd.DataFrame,
+    offer_scope: Literal["ATL", "BTL"] = "ATL",
 ) -> list[dict[str, Any]]:
     """Filter (ATL/active) and normalize both Omantel catalogues.
 
@@ -407,8 +430,20 @@ def normalize_omantel_catalogues(
     field), matching ``reference/step2.py``'s ``omantel_plans`` list.
     """
 
-    prepaid_atl = filter_prepaid_atl(prepaid_df)
-    postpaid_atl = filter_postpaid_atl(postpaid_df)
+    if offer_scope == "ATL":
+        prepaid_atl = filter_prepaid_atl(prepaid_df)
+        postpaid_atl = filter_postpaid_atl(postpaid_df)
+    elif offer_scope == "BTL":
+        prepaid_atl = filter_prepaid_btl(prepaid_df)
+        # An absent postpaid BTL catalogue arrives as an empty DataFrame
+        # without columns: zero postpaid plans, not an error.
+        postpaid_atl = (
+            postpaid_df.iloc[0:0]
+            if postpaid_df.empty
+            else filter_postpaid_btl(postpaid_df)
+        )
+    else:
+        raise ValueError(f"Unsupported offer_scope: {offer_scope!r}")
 
     prepaid_normalized = [
         normalize_omantel_row(row, "PREPAID") for _, row in prepaid_atl.iterrows()
@@ -417,6 +452,11 @@ def normalize_omantel_catalogues(
     postpaid_normalized = [
         normalize_omantel_row(row, "POSTPAID") for _, row in postpaid_atl.iterrows()
     ]
+
+    if offer_scope == "BTL":
+        # ATL plans deliberately get no such key (absent means ATL).
+        for plan in prepaid_normalized + postpaid_normalized:
+            plan["offer_scope"] = "BTL"
 
     omantel_plans = prepaid_normalized + postpaid_normalized
 
@@ -431,7 +471,9 @@ def normalize_omantel_catalogues(
 
 
 def run_omantel_normalization(
-    prepaid_df: pd.DataFrame, postpaid_df: pd.DataFrame
+    prepaid_df: pd.DataFrame,
+    postpaid_df: pd.DataFrame,
+    offer_scope: Literal["ATL", "BTL"] = "ATL",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Thin Step 2 orchestration: deterministic normalization + LLM semantic enrichment.
 
@@ -450,6 +492,8 @@ def run_omantel_normalization(
 
     from market_pulse.llm.omantel_classifier import classify_omantel_plans
 
-    normalized_plans = normalize_omantel_catalogues(prepaid_df, postpaid_df)
+    normalized_plans = normalize_omantel_catalogues(
+        prepaid_df, postpaid_df, offer_scope=offer_scope
+    )
 
     return classify_omantel_plans(normalized_plans)
