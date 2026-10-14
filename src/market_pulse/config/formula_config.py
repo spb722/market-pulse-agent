@@ -53,7 +53,10 @@ _VALID_METRIC_NAMES = {
     "sms",
     "validity",
     "social_data",
-    "roaming",
+    "intl_roaming_data",
+    "gcc_roaming_minutes",
+    "other_roaming_minutes",
+    "total_data",
 }
 
 # Tolerance for the "sums to 1.0" check on business_exposure_weights (Step 5),

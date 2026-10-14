@@ -25,6 +25,8 @@ from typing import Any, Literal, Mapping, Optional
 
 import pandas as pd
 
+from market_pulse.services.total_data import compute_total_data
+
 logger = logging.getLogger(__name__)
 
 Row = Mapping[str, Any]
@@ -125,6 +127,14 @@ def clean_number(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _first_number(row: Any, primary: str, legacy: str) -> Optional[float]:
+    """Read ``primary`` column; fall back to ``legacy`` only if primary is absent."""
+
+    if primary in row:
+        return clean_number(row.get(primary))
+    return clean_number(row.get(legacy))
 
 
 def get_validity_bucket(
@@ -331,8 +341,17 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
     # blank means "unknown", so 0 is kept as 0.0 and only blank -> None.
     social_data_gb = clean_number(row.get("data_social"))
 
-    # Roaming data bundled in the plan (GB). Same 0-vs-blank rule.
-    roaming_data_gb = clean_number(row.get("data_roaming"))
+    # Roaming fields. Same 0-vs-blank rule (0 stays 0.0, blank -> None).
+    # ``gcc_roaming_data_gb`` / ``gcc_roaming_minutes`` replace the legacy
+    # ``data_roaming`` / ``roaming_minutes`` columns, which are still read as
+    # a fallback when the new column is absent from the frame.
+    gcc_roaming_data_gb = _first_number(row, "gcc_roaming_data_gb", "data_roaming")
+    gcc_roaming_minutes = _first_number(row, "gcc_roaming_minutes", "roaming_minutes")
+    intl_roaming_data_gb = clean_number(row.get("intl_roaming_data_gb"))
+    other_roaming_minutes = clean_number(row.get("other_roaming_minutes"))
+    entertainment_gb = clean_number(row.get("entertainment_gb"))
+
+    total_data = compute_total_data(data_gb, social_data_gb, entertainment_gb)
 
     # Free-text benefits (items separated by ";"); passed through unsplit.
     extra_benefits = row.get("extra_benefits")
@@ -384,7 +403,12 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
         # Data
         "data_gb": data_gb,
         "social_pass_gb": social_data_gb,
-        "roaming_data_gb": roaming_data_gb,
+        "entertainment_gb": entertainment_gb,
+        "total_data": total_data,
+        "gcc_roaming_data_gb": gcc_roaming_data_gb,
+        "gcc_roaming_minutes": gcc_roaming_minutes,
+        "intl_roaming_data_gb": intl_roaming_data_gb,
+        "other_roaming_minutes": other_roaming_minutes,
         "unlimited_data": unlimited_data,
         # Voice
         "voice_minutes": voice_minutes,
@@ -402,9 +426,6 @@ def normalize_omantel_row(row: Row, category: str) -> dict[str, Any]:
             row.get("product_status") if category == "PREPAID" else None
         ),
         "extra_benefits": extra_benefits,
-        # Keep source content for LLM/audit
-        "message_english": row.get("message_english"),
-        "message_arabic": row.get("message_arabic"),
         # Audit
         "quality_flags": quality_flags,
     }

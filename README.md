@@ -304,6 +304,10 @@ with what raising or lowering it actually does to the calculation. Defaults repr
 the original reference implementation exactly; edit the file and restart the server to
 apply changes.
 
+Roaming and total data are scored by four metrics (COMBO weight 0.05 each): `intl_roaming_data` (GB),
+`gcc_roaming_minutes`, `other_roaming_minutes` and `total_data` (= `data_gb + social_pass_gb + entertainment_gb`).
+Unknown (blank) values on either side are dropped and weights renormalised. See `docs/usage_guide.md`.
+
 ---
 
 ## Project layout

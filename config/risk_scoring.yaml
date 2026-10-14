@@ -21,7 +21,7 @@
 gap_analysis:
 
   # How close two plans' normalized advantage (-1..1) on a single metric
-  # (price/data/voice/idd/sms/validity/social_data/roaming) must be to call it a tie ("PARITY")
+  # (price/data/voice/idd/sms/validity/social_data/intl_roaming_data/gcc_roaming_minutes/other_roaming_minutes/total_data) must be to call it a tie ("PARITY")
   # instead of declaring one side ahead.
   #   RAISE this  -> more metrics get called "PARITY" (harder to trigger an
   #                  advantage/disadvantage label).
@@ -58,7 +58,8 @@ gap_analysis:
   # given product type (e.g. add "sms" to COMBO).
   #
   # Valid metric names: price, data, voice, idd, sms, validity,
-  # social_data, roaming.
+  # social_data, intl_roaming_data (worldwide roaming data GB), gcc_roaming_minutes,
+  # other_roaming_minutes (non-GCC roaming minutes), total_data (data + social + entertainment GB).
   # "OTHER" must always be present -- it's the fallback used for any plan
   # whose product type isn't explicitly listed below.
   weights:
@@ -71,7 +72,10 @@ gap_analysis:
       idd: 0.10        # international calling matters least
       validity: 0.10   # how long the plan lasts matters least
       social_data: 0.05  # social-pass GB; dropped (and rest rescaled) if either side is unknown
-      roaming: 0.05      # roaming data GB; dropped if either side is unknown
+      intl_roaming_data: 0.05  # worldwide roaming data GB; dropped if either side is unknown
+      gcc_roaming_minutes: 0.05  # GCC roaming minutes; dropped if either side is unknown
+      other_roaming_minutes: 0.05  # non-GCC roaming minutes; dropped if either side is unknown
+      total_data: 0.05   # data + social + entertainment GB (unlimited-aware); dropped if either side is unknown
 
     # A plan whose principal commercial product is data-only.
     DATA:
