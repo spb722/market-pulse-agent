@@ -8,8 +8,7 @@ fully-explicit output dict per row (see ``normalize_omantel_row`` in
 copying-and-augmenting an arbitrary raw payload. The normalized-plan field
 set is therefore fixed and known, so ``NormalizedOmantelPlan`` uses
 ``extra="forbid"``. Raw source fields that are merely passed through
-untouched (``source_product_type``, ``message_english``, ``message_arabic``,
-...) are still loosely typed because the reference reads them defensively
+untouched (``source_product_type``) are still loosely typed because the reference reads them defensively
 via ``row.get(...)`` from CSV-sourced data of unknown/uncontrolled shape.
 
 This is a deliberately separate module from ``market_pulse.schemas.competitor``:
@@ -77,7 +76,14 @@ class NormalizedOmantelPlan(BaseModel):
 
     data_gb: Optional[float] = None
     social_pass_gb: Optional[float] = None
-    roaming_data_gb: Optional[float] = None
+    # Roaming (None = unknown, 0 = none). Omantel roaming data passes are GCC-only.
+    gcc_roaming_data_gb: Optional[float] = None
+    gcc_roaming_minutes: Optional[float] = None
+    intl_roaming_data_gb: Optional[float] = None
+    other_roaming_minutes: Optional[float] = None
+    entertainment_gb: Optional[float] = None
+    # data_gb + social_pass_gb + entertainment_gb (None if data_gb is None).
+    total_data: Optional[float] = None
     unlimited_data: bool
 
     voice_minutes: Optional[float] = None
@@ -90,11 +96,6 @@ class NormalizedOmantelPlan(BaseModel):
 
     source_offer_type: Optional[str] = None
     source_status: Optional[str] = None
-
-    # Raw source content kept for LLM/audit. Source CSV data of unknown
-    # cleanliness (may be missing/NaN) -- kept loosely typed on purpose.
-    message_english: Any = None
-    message_arabic: Any = None
 
     # Free-text benefits from the catalogue (";"-separated, not split).
     extra_benefits: Optional[str] = None

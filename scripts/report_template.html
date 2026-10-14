@@ -1019,7 +1019,12 @@ function escapeHtml(s) {
 // Metric keys stay snake_case in the data (portfolio gap de-duplication
 // relies on them matching capability names); only the displayed text changes.
 function displayMetric(s) {
-  return String(s).replace(/\bSOCIAL_DATA\b/gi, 'SOCIAL DATA');
+  return String(s)
+    .replace(/\bSOCIAL_DATA\b/gi, 'SOCIAL DATA')
+    .replace(/\bINTL_ROAMING_DATA\b/gi, 'INTL ROAMING DATA')
+    .replace(/\bGCC_ROAMING_MINUTES\b/gi, 'GCC ROAMING MIN')
+    .replace(/\bOTHER_ROAMING_MINUTES\b/gi, 'OTHER ROAMING MIN')
+    .replace(/\bTOTAL_DATA\b/gi, 'TOTAL DATA');
 }
 
 // extra_benefits is free text with items separated by ";".

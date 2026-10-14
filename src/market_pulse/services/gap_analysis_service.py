@@ -210,7 +210,6 @@ def plan_text(plan: Plan) -> str:
     parts = [
         plan.get("plan_name"),
         plan.get("extra_benefits"),
-        plan.get("message_english"),
     ]
 
     return " ".join(clean_text(x) for x in parts).lower()
@@ -269,7 +268,11 @@ def get_data_value(plan: Plan) -> Optional[float]:
     product_type = get_product_type(plan)
 
     if product_type == "ROAMING":
-        roaming_data = clean_number(plan.get("roaming_data_gb"))
+        # Roaming data: worldwide (new/legacy name) first, then GCC passes
+        # (Omantel ROAMING products carry ``gcc_roaming_data_gb``).
+        roaming_data = _first_value(
+            plan, "intl_roaming_data_gb", "roaming_data_gb", "gcc_roaming_data_gb"
+        )
 
         if roaming_data is not None:
             return roaming_data
@@ -299,19 +302,44 @@ def get_social_value(plan: Plan) -> Optional[float]:
     return clean_number(plan.get("social_pass_gb"))
 
 
-def get_roaming_value(plan: Plan) -> Optional[float]:
-    """Roaming data (GB) bundled in a plan.
+def _first_value(plan: Plan, *keys: str) -> Optional[float]:
+    """First non-missing numeric value among ``keys`` (0 counts as a value)."""
 
-    A plan flagged ``roaming_included`` with no explicit ``roaming_data_gb``
-    (e.g. Ooredoo "Roam Like Home") uses its ``data_gb`` as the roaming value.
+    for key in keys:
+        value = clean_number(plan.get(key))
+
+        if value is not None:
+            return value
+
+    return None
+
+
+def get_intl_roaming_data_value(plan: Plan) -> Optional[float]:
+    """Worldwide roaming data (GB); legacy crawler name ``roaming_data_gb``.
+
+    No fallback to ``data_gb`` even for ``roaming_included`` plans: blank means
+    unknown and the metric is skipped.
     """
 
-    value = clean_number(plan.get("roaming_data_gb"))
+    return _first_value(plan, "intl_roaming_data_gb", "roaming_data_gb")
 
-    if value is None and plan.get("roaming_included") is True:
-        value = clean_number(plan.get("data_gb"))
 
-    return value
+def get_gcc_roaming_minutes_value(plan: Plan) -> Optional[float]:
+    """GCC roaming minutes; legacy name ``roaming_minutes``. No invented fallback."""
+
+    return _first_value(plan, "gcc_roaming_minutes", "roaming_minutes")
+
+
+def get_other_roaming_minutes_value(plan: Plan) -> Optional[float]:
+    """Non-GCC roaming minutes. No invented fallback."""
+
+    return clean_number(plan.get("other_roaming_minutes"))
+
+
+def get_total_data_value(plan: Plan) -> Optional[float]:
+    """data + social + entertainment GB (computed in normalization)."""
+
+    return clean_number(plan.get("total_data"))
 
 
 # ---------------------------------------------------------------------------
@@ -498,29 +526,71 @@ def validity_gap(
     )
 
 
-def roaming_gap(
+def _roaming_metric_gap(
+    getter: Callable[[Plan], Optional[float]],
+    note: str,
     competitor_plan: Plan,
     omantel_plan: Plan,
     config: Optional[GapAnalysisConfig] = None,
 ) -> dict[str, Any]:
-    # ROAMING products already compare roaming data via the ``data`` metric.
+    # ROAMING products already compare roaming via the ``data`` metric.
     if get_product_type(competitor_plan) == "ROAMING" or (
         get_product_type(omantel_plan) == "ROAMING"
     ):
         return {
-            "competitor": get_roaming_value(competitor_plan),
-            "omantel": get_roaming_value(omantel_plan),
+            "competitor": getter(competitor_plan),
+            "omantel": getter(omantel_plan),
             "difference": None,
             "gap_pct": None,
             "normalized_advantage": None,
             "position": "NOT_SCORED",
-            "note": "ROAMING products compare roaming data via the data metric",
+            "note": note,
         }
 
     return finite_metric_gap(
-        get_roaming_value(competitor_plan),
-        get_roaming_value(omantel_plan),
-        config=config,
+        getter(competitor_plan), getter(omantel_plan), config=config
+    )
+
+
+def intl_roaming_data_gap(
+    competitor_plan: Plan,
+    omantel_plan: Plan,
+    config: Optional[GapAnalysisConfig] = None,
+) -> dict[str, Any]:
+    return _roaming_metric_gap(
+        get_intl_roaming_data_value,
+        "ROAMING products compare roaming data via the data metric",
+        competitor_plan,
+        omantel_plan,
+        config,
+    )
+
+
+def gcc_roaming_minutes_gap(
+    competitor_plan: Plan,
+    omantel_plan: Plan,
+    config: Optional[GapAnalysisConfig] = None,
+) -> dict[str, Any]:
+    return _roaming_metric_gap(
+        get_gcc_roaming_minutes_value,
+        "ROAMING products compare roaming via the data/voice metrics",
+        competitor_plan,
+        omantel_plan,
+        config,
+    )
+
+
+def other_roaming_minutes_gap(
+    competitor_plan: Plan,
+    omantel_plan: Plan,
+    config: Optional[GapAnalysisConfig] = None,
+) -> dict[str, Any]:
+    return _roaming_metric_gap(
+        get_other_roaming_minutes_value,
+        "ROAMING products compare roaming via the data/voice metrics",
+        competitor_plan,
+        omantel_plan,
+        config,
     )
 
 
@@ -556,7 +626,22 @@ def build_metric_gaps(
             get_social_value(omantel_plan),
             config=config,
         ),
-        "roaming": roaming_gap(competitor_plan, omantel_plan, config=config),
+        "intl_roaming_data": intl_roaming_data_gap(
+            competitor_plan, omantel_plan, config=config
+        ),
+        "gcc_roaming_minutes": gcc_roaming_minutes_gap(
+            competitor_plan, omantel_plan, config=config
+        ),
+        "other_roaming_minutes": other_roaming_minutes_gap(
+            competitor_plan, omantel_plan, config=config
+        ),
+        "total_data": unlimited_metric_gap(
+            competitor_plan,
+            omantel_plan,
+            get_total_data_value,
+            has_unlimited_data,
+            config=config,
+        ),
     }
 
 

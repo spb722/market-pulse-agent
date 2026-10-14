@@ -71,7 +71,7 @@ RECORD_FIELD_MAP = {
     "narrative_source": "narrative_source",
 }
 
-METRICS = ["PRICE", "DATA", "VOICE", "IDD", "SMS", "VALIDITY", "SOCIAL_DATA", "ROAMING"]
+METRICS = ["PRICE", "DATA", "VOICE", "IDD", "SMS", "VALIDITY", "SOCIAL_DATA", "INTL_ROAMING_DATA", "GCC_ROAMING_MINUTES", "OTHER_ROAMING_MINUTES", "TOTAL_DATA"]
 
 NO_MATCH_FIELD_MAP = {
     "Competitor Plan": "competitor_plan",

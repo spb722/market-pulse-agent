@@ -137,7 +137,7 @@ def to_catalogue_row(raw: pd.Series, columns: list[str]) -> dict:
         "units_sms": float(raw["SMS_benefits"]),
         "data": round(data_mb / 1024, 3),
         "data_social": 0.0,
-        "data_roaming": 0.0,
+        "gcc_roaming_data_gb": 0.0,
         "min": 0.0 if is_idd else minutes,
         "min_flex": 0.0,
         "idd": minutes if is_idd else 0.0,

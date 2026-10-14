@@ -350,6 +350,21 @@ A plan with a missing `validity_days` or with `data_quality_flags` is accepted. 
 curl "http://localhost:8000/runs/RUN-4312FCB6/competitors?offer_scope=BTL"
 ```
 
+### Roaming and total-data metrics
+
+Four gap metrics, each weighted 0.05 for COMBO plans:
+
+| Metric | Crawler field | Omantel catalogue column |
+|---|---|---|
+| `intl_roaming_data` | `intl_roaming_data_gb` (legacy `roaming_data_gb`) | `intl_roaming_data_gb` |
+| `gcc_roaming_minutes` | `gcc_roaming_minutes` (legacy `roaming_minutes`) | `gcc_roaming_minutes` |
+| `other_roaming_minutes` | `other_roaming_minutes` | `other_roaming_minutes` |
+| `total_data` | recomputed (crawler value kept as `source_total_data`) | recomputed |
+
+`total_data = data_gb + social_pass_gb + entertainment_gb` (missing social/entertainment count as 0; unlimited-aware).
+Omantel `data_roaming` was renamed `gcc_roaming_data_gb`. A blank value on either side means the metric is dropped
+and the remaining weights are renormalised; `0` is a real value and is scored. There is no Roam Like Home fallback.
+
 ---
 
 ## 7. One Thing to Know Before You Rely on This in Production

@@ -162,7 +162,6 @@ def has_unlimited_data(plan: Plan) -> bool:
         [
             clean_text(plan.get("plan_name")),
             clean_text(plan.get("extra_benefits")),
-            clean_text(plan.get("message_english")),
         ]
     ).lower()
 
@@ -185,7 +184,6 @@ def has_unlimited_voice(plan: Plan) -> bool:
         [
             clean_text(plan.get("plan_name")),
             clean_text(plan.get("extra_benefits")),
-            clean_text(plan.get("message_english")),
         ]
     ).lower()
 
@@ -509,7 +507,6 @@ def plan_text(plan: Plan) -> str:
     parts = [
         plan.get("plan_name"),
         plan.get("extra_benefits"),
-        plan.get("message_english"),
     ]
 
     return " ".join(clean_text(x) for x in parts).lower()
@@ -527,7 +524,12 @@ def get_capabilities(plan: Plan) -> set[str]:
     if (
         product_type == "ROAMING"
         or plan.get("roaming_included") is True
+        or (clean_number(plan.get("intl_roaming_data_gb")) or 0) > 0
+        or (clean_number(plan.get("gcc_roaming_data_gb")) or 0) > 0
         or (clean_number(plan.get("roaming_data_gb")) or 0) > 0
+        or (clean_number(plan.get("gcc_roaming_minutes")) or 0) > 0
+        or (clean_number(plan.get("other_roaming_minutes")) or 0) > 0
+        or (clean_number(plan.get("roaming_minutes")) or 0) > 0
         or "roaming" in text
         or "roam like home" in text
     ):

@@ -9,7 +9,7 @@ from market_pulse.schemas.omantel import NormalizedOmantelPlan
 from market_pulse.services.gap_analysis_service import (
     build_metric_gaps,
     compute_weighted_position,
-    get_roaming_value,
+    get_intl_roaming_data_value,
 )
 from market_pulse.services.omantel_normalization_service import normalize_omantel_row
 
@@ -40,19 +40,19 @@ def _row(**kw):
 
 @pytest.mark.parametrize("category", ["PREPAID", "POSTPAID"])
 def test_step2_zero_stays_zero_blank_is_none(category):
-    zero = normalize_omantel_row(_row(data_social=0, data_roaming=0), category)
+    zero = normalize_omantel_row(_row(data_social=0, gcc_roaming_data_gb=0), category)
     assert zero["social_pass_gb"] == 0.0
-    assert zero["roaming_data_gb"] == 0.0
+    assert zero["gcc_roaming_data_gb"] == 0.0
 
     blank = normalize_omantel_row(
-        _row(data_social=float("nan"), data_roaming=None), category
+        _row(data_social=float("nan"), gcc_roaming_data_gb=None), category
     )
     assert blank["social_pass_gb"] is None
-    assert blank["roaming_data_gb"] is None
+    assert blank["gcc_roaming_data_gb"] is None
 
-    val = normalize_omantel_row(_row(data_social=2.5, data_roaming=1), category)
+    val = normalize_omantel_row(_row(data_social=2.5, gcc_roaming_data_gb=1), category)
     assert val["social_pass_gb"] == 2.5
-    assert val["roaming_data_gb"] == 1.0
+    assert val["gcc_roaming_data_gb"] == 1.0
 
 
 def test_step2_extra_benefits_passthrough_and_missing_columns():
@@ -64,16 +64,16 @@ def test_step2_extra_benefits_passthrough_and_missing_columns():
 
     missing = normalize_omantel_row(_row(), "PREPAID")
     assert missing["social_pass_gb"] is None
-    assert missing["roaming_data_gb"] is None
+    assert missing["gcc_roaming_data_gb"] is None
     assert missing["extra_benefits"] is None
 
 
 def test_normalized_plan_schema_accepts_new_fields():
     row = normalize_omantel_row(
-        _row(data_social=0, data_roaming=3, extra_benefits="X"), "PREPAID"
+        _row(data_social=0, gcc_roaming_data_gb=3, extra_benefits="X"), "PREPAID"
     )
     plan = NormalizedOmantelPlan(**row)
-    assert plan.roaming_data_gb == 3.0
+    assert plan.gcc_roaming_data_gb == 3.0
     assert plan.social_pass_gb == 0.0
     assert plan.extra_benefits == "X"
 
@@ -84,7 +84,7 @@ def test_normalized_plan_schema_accepts_new_fields():
 
 
 @pytest.mark.parametrize(
-    "key,metric", [("social_pass_gb", "social_data"), ("roaming_data_gb", "roaming")]
+    "key,metric", [("social_pass_gb", "social_data"), ("intl_roaming_data_gb", "intl_roaming_data")]
 )
 def test_zero_vs_value_and_blank(key, metric):
     gaps = build_metric_gaps(_plan(**{key: 25}), _plan(**{key: 0}))
@@ -97,28 +97,27 @@ def test_zero_vs_value_and_blank(key, metric):
         assert gaps[metric]["normalized_advantage"] is None
 
 
-def test_roam_like_home_uses_data_gb():
-    comp = _plan(roaming_included=True, data_gb=10, roaming_data_gb=None)
-    assert get_roaming_value(comp) == 10.0
+def test_roam_like_home_no_longer_invents_roaming_data():
+    comp = _plan(roaming_included=True, data_gb=10, intl_roaming_data_gb=None)
+    assert get_intl_roaming_data_value(comp) is None
 
-    gaps = build_metric_gaps(comp, _plan(roaming_data_gb=5))
-    assert gaps["roaming"]["competitor"] == 10.0
-    assert gaps["roaming"]["position"] == "COMPETITOR_ADVANTAGE"
+    gaps = build_metric_gaps(comp, _plan(intl_roaming_data_gb=5))
+    assert gaps["intl_roaming_data"]["position"] == "NOT_SCORED"
 
-    # Explicit roaming GB wins over data_gb; flag false -> no fallback.
-    assert get_roaming_value(_plan(roaming_included=True, data_gb=10, roaming_data_gb=2)) == 2.0
-    assert get_roaming_value(_plan(roaming_included=False, data_gb=10)) is None
+    assert get_intl_roaming_data_value(_plan(intl_roaming_data_gb=2)) == 2.0
+    # Legacy crawler field name still works.
+    assert get_intl_roaming_data_value(_plan(roaming_data_gb=3)) == 3.0
 
 
 def test_roaming_product_not_scored_for_roaming_metric():
-    comp = _plan(product_type="ROAMING", roaming_data_gb=5, data_gb=5)
-    om = _plan(product_type="ROAMING", roaming_data_gb=1, data_gb=1)
+    comp = _plan(product_type="ROAMING", intl_roaming_data_gb=5, data_gb=5)
+    om = _plan(product_type="ROAMING", intl_roaming_data_gb=1, data_gb=1)
 
     gaps = build_metric_gaps(comp, om)
 
-    assert gaps["roaming"]["position"] == "NOT_SCORED"
-    assert gaps["roaming"]["normalized_advantage"] is None
-    assert gaps["roaming"]["note"]
+    assert gaps["intl_roaming_data"]["position"] == "NOT_SCORED"
+    assert gaps["intl_roaming_data"]["normalized_advantage"] is None
+    assert gaps["intl_roaming_data"]["note"]
     # Data metric still compares the roaming data.
     assert gaps["data"]["position"] == "COMPETITOR_ADVANTAGE"
 
@@ -155,13 +154,13 @@ def test_combo_regression_when_new_metrics_not_scored():
 def test_combo_new_metrics_participate_with_effective_weight():
     config = get_gap_analysis_config()
     comp, om = _combo_pair(
-        comp={"social_pass_gb": 10, "roaming_data_gb": 10},
-        om={"social_pass_gb": 0, "roaming_data_gb": 0},
+        comp={"social_pass_gb": 10, "intl_roaming_data_gb": 10},
+        om={"social_pass_gb": 0, "intl_roaming_data_gb": 0},
     )
     gaps = build_metric_gaps(comp, om)
 
     result = compute_weighted_position(comp, gaps, config=config)
 
     assert result["effective_weights"]["social_data"] == round(0.05 / 1.10, 4)
-    assert result["effective_weights"]["roaming"] == round(0.05 / 1.10, 4)
+    assert result["effective_weights"]["intl_roaming_data"] == round(0.05 / 1.10, 4)
     assert result["weighted_contributions"]["social_data"] == round(-1.0 * 0.05 / 1.10 * 100, 2)

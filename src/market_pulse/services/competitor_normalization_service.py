@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from market_pulse.services.total_data import compute_total_data
+
 logger = logging.getLogger(__name__)
 
 RawPlan = dict[str, Any]
@@ -110,6 +112,24 @@ def add_rule_features(plan: RawPlan) -> RawPlan:
 
     p = plan.copy()
 
+    # Roaming field mapping: legacy crawler files carry ``roaming_data_gb``
+    # (worldwide roaming data) and ``roaming_minutes``; newer files use
+    # ``intl_roaming_data_gb`` / ``gcc_roaming_minutes`` / ``other_roaming_minutes``.
+    if p.get("intl_roaming_data_gb") is None and p.get("roaming_data_gb") is not None:
+        p["intl_roaming_data_gb"] = p["roaming_data_gb"]
+    if p.get("gcc_roaming_minutes") is None and p.get("roaming_minutes") is not None:
+        p["gcc_roaming_minutes"] = p["roaming_minutes"]
+    for key in ("intl_roaming_data_gb", "gcc_roaming_minutes", "other_roaming_minutes", "entertainment_gb"):
+        p.setdefault(key, None)
+
+    # total_data uses the SAME formula as Omantel; keep the crawler's own
+    # value (if any) as ``source_total_data`` for audit.
+    if "total_data" in p:
+        p["source_total_data"] = p["total_data"]
+    p["total_data"] = compute_total_data(
+        p.get("data_gb"), p.get("social_pass_gb"), p.get("entertainment_gb")
+    )
+
     p["validity_bucket"] = validity_bucket(p.get("validity_days"))
 
     p["price_band"] = price_band(p.get("price_omr"))
@@ -122,7 +142,9 @@ def add_rule_features(plan: RawPlan) -> RawPlan:
 
     p["has_roaming"] = bool(
         p.get("roaming_included")
-        or (p.get("roaming_data_gb") and p.get("roaming_data_gb") > 0)
+        or (p.get("intl_roaming_data_gb") and p.get("intl_roaming_data_gb") > 0)
+        or (p.get("gcc_roaming_minutes") and p.get("gcc_roaming_minutes") > 0)
+        or (p.get("other_roaming_minutes") and p.get("other_roaming_minutes") > 0)
     )
 
     p["has_idd"] = bool(p.get("intl_minutes") and p.get("intl_minutes") > 0)
